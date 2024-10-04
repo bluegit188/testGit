@@ -1,0 +1,31 @@
+TIMESTAMP OFF
+#read block data one at a time, s0,s1, ...
+read block "/tmp/forplot_vol.txt.1"
+block xy "1:2"
+read block "/tmp/forplot_vol.txt.2"
+block xy "1:2"
+#1=black, 2=red, 3=green, 4=blue, 8=purple
+s0 line color 1
+s1 line color 2
+s0 line linewidth 4
+s1 line linewidth 4
+s0 linestyle  1
+s1 linestyle  1
+# symbols
+s0 symbol 1
+s0 symbol size 0.5
+s0 symbol fill 1
+s1 symbol 2
+s1 symbol size 0.5
+s1 symbol fill 1
+with g0
+s0 legend "YM1"
+s1 legend "YM2"
+yaxis label "Volume"
+yaxis label char size 1.25
+title "Tenor volume: SYM YM1 YM2"
+title size 2
+title color 8
+#subtitle "SUBSTR"
+#subtitle size 1.1
+xaxis  ticklabel format yymmdd
