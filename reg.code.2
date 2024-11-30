@@ -1,0 +1,2965 @@
+#faster read,  57 sec for a 3G data
+regdata<-fread("Y_X_dif_lags.txt")
+summary(regdata)
+
+
+#fast read, 6 mins for a 3G data
+#regdata<-read.table(file="Y_X_dif_lags.txt",header=T)
+#summary(regdata)
+
+plot(regdata$lag.1,regdata$difF1D)
+
+
+
+regdata<- regdata[regdata$DATE>20030101,]
+
+
+plot(regdata$predNNETIn,regdata$ooF1D,pch=".")
+fit2<-lm(ooF1D ~ regdata$predNNETIn,data=regdata)
+summary(fit2)
+
+
+####
+##plot cummu pnls
+
+library(ggplot2)
+
+
+plotCumPPL<- function(DATE, y,x)
+#usage: plotCumPPL(regdata$DATE,regdata$ooF1D, fcst)
+{ 
+   # disable warning tempororily
+   #defaultW <- getOption("warn")
+   #options(warn = -1)
+
+   pnl=y*x
+
+   df= as.data.frame(cbind(DATE,pnl))
+   names(df)=c("DATE","pnl")
+
+   # step 2: create idx for x
+   # data table util is very fast
+   dt <- data.table(df)
+   setkey(dt,DATE) # this will sort by DATE invisibly
+   dfPort<-dt[,list(ppl=sum(pnl),count=.N),by=DATE]
+   names(dfPort)=c("DATE","ppl","count")
+
+   #plot(cumsum(dfPort$ppl))
+
+   dfPort$cumppl=cumsum(dfPort$ppl);
+   #use Date
+   dfPort$Date <- as.Date(strptime(dfPort$DATE, "%Y%m%d"))
+
+   #base plot
+   #plot(cumppl ~ Date,dfPort, xaxt = "n", type = "l") 
+   #title("cumpnl plot")
+   #axis(1, dfPort$Date, format(dfPort$Date, "%Y%m%d"), cex.axis = 1) 
+ 
+   mean=mean(dfPort$ppl)
+   sd=sd(dfPort$ppl)
+   shp=mean/sd*sqrt(252)
+   print(paste("pplShp= ",round(shp,digits=5), "mean= ",round(mean,digits=5)," std= ",round(sd,digits=5)))
+
+   # turn warning back on
+   #options(warn = defaultW)
+
+
+   #ggplot
+   #require(ggplot2)
+   ggplot( data = dfPort, aes( Date, cumppl )) + geom_line()+ggtitle("cumpnl plot")
+
+
+}
+
+
+plotCumPPL(regdata$DATE,regdata$ooF1D, fcst)
+
+#############################################
+
+
+YYYY<- function(DATE)
+{ 
+   ## by year for this period
+   MMDD=DATE%%10000
+   YYYY=(DATE-MMDD) /10000
+}
+
+
+
+############################
+###### -create idx function in R
+
+library(data.table)
+
+createIdx <- function(DATE, X)
+# based on key=DATE, and x
+# create idx of X, and output dataframe: (DATE, idxX, count)
+### how to use
+# dfIdx=createIdx(regdata$DATE,regdata$OC1)
+# names(dfIdx)=c("DATE","idx.OC1.jf","count")
+# regdata=merge(regdata,  dfIdx, by="DATE")
+####
+{ 
+   df= as.data.frame(cbind(DATE,X))
+   names(df)=c("DATE","X")
+
+   # step 2: create idx for x
+   # data table util is very fast
+   dt <- data.table(df)
+   setkey(dt,DATE) # this will sort by DATE invisibly
+   dfIdx<-dt[,list(idx=mean(X),count=.N),by=DATE]
+   #names(dfIdx)=c("DATE","idx.OC1.jf","count")
+
+   return(dfIdx)
+}
+
+#how to use
+dfIdx=createIdx(regdata$DATE,regdata$OC1)
+names(dfIdx)=c("DATE","idx.OC1.jf","count")
+regdata=merge(regdata,  dfIdx, by="DATE")
+
+ cor(regdata$idx.OC1,regdata$idx.OC1.jf)
+[1] 0.9997349
+
+################################
+
+
+########################
+# -- check normality of the fcsts:
+# the more it is to the 45 degree line, the more it is to normal
+
+qqnorm(regdata$ooF1D.cvFcst.1500,main="no scl");qqline(regdata$ooF1D.cvFcst.1500)
+
+###############################
+
+
+
+-- use R funcs from lbox3:
+library(data.table)
+source("/opt/RFuncs/loadUtils.R")
+
+source("~/myRFuncs/loadUtils.R")
+
+
+
+#fast read
+regdata<-fread("Y_X_dif_lags.txt")
+summary(regdata)
+
+
+# regular OLS
+fit2<-lm(ooF1D ~ ooF1D,
+data=regdata)
+summary(fit2)
+
+# customerized OLS
+               
+OLS(ooF1D~ooF1D
+, data = regdata)
+
+###################################
+##### knncv_fcst
+
+
+library(data.table)
+source("~/myRFuncs/loadUtils.R")
+
+
+# best knn gap for this US data
+knnGap= knncv_fcst( constrain(ooF1D,-3,3) ~ GAP+OO.2t6.scl+I(0.5*DOW), regdata, 50, 1500,  regdata$SYM,regdata$DATE,scale=FALSE,dist=2, h = 0)
+
+#knnOO5D=knnGap
+#regdata$testknn=knnOO5D$yhat_knn
+
+plot(knnGap$yhat_knn,regdata$ooF1D)
+
+fit2<-lm(ooF1D ~ 
+knnGap$yhat_knn
+,data=regdata)
+summary(fit2)
+
+
+--- cvols
+
+
+
+
+--CV ols
+
+source("~/myRFuncs/cvfcst1.R")
+
+
+
+cvFcst=cvfcst1( ooF1D ~ GAP+I(GAP*abs(OO.2t6.scl)) , regdata, "DATE", lm, 25)
+fit1<-lm( ooF1D ~ cvFcst$yhat,data=regdata)
+summary(fit1)
+
+
+
+
+
+
+
+#############################
+
+
+################
+## compute cv fcst
+##
+##
+source("~/myRFuncs/cvfcst1.R")
+
+
+## noet that I do CV on full data,
+
+cvFcst=cvfcst1( ooF1D ~ SP.CC.1 + SP.CC.2 + VX.CC.1 + JY.CC.1 + I((DX.CC.4 + DX.CC.5 + DX.CC.6 + DX.CC.7)), regdata, "DATE", lm, 50)
+
+fit1<-lm( ooF1D ~ cvFcst$yhat,data=regdata)
+summary(fit1)
+
+
+
+############
+
+
+##############################
+##############################
+## SrMdd2
+###############
+
+
+source("~/myRFuncs/loadUtils.R")
+
+ SrMdd2(
+ooF1D~d1svmFcst
+, regdata, 
+tcost=0.03, sizeX=0.03, posType=2, lambda=0, verbose=TRUE)
+
+
+
+plotCumPPL2(regdata$DATE,regdata$ooF1D,constrain(regdata$fcst5,-0.13,0.13),+constrain(regdata$fcstB1,-0.13,0.13))
+
+
+plotCumPPL2Dif(regdata$DATE,regdata$ooF1D,constrain(regdata$fcst5,-0.13,0.13),constrain(regdata$fcstB1,-0.13,0.13))
+
+
+
+
+
+
+#-- best4, eur bonds
+
+
+source("/home/jgeng/myRFuncs/srmdd_central2.R")
+
+
+ SrMdd2(
+ooF1D~
+bt1FcstDM
++GAP:ifelse(ASSET4 == "Financial",1,0):ifelse(SESSION == "Europe", 1, 0)
++constrain(GAP * AEMAOO, -1.5, 1.5):ifelse(ASSET4 == "Financial",1,0):ifelse(SESSION == "Europe", 1, 0)
+, regdata, 
+tcost=0.03, sizeX=0.03, posType=0, lambda=1, verbose=TRUE)
+
+#############################
+#############################
+
+
+
+
+
+
+
+source("~/myRFuncs/loadUtils.R")
+
+
+OLS(ooF1D~vxCCEmaEx1
+, data = regdata)
+
+
+
+#### YConst
+
+#fast read
+regdata<-read.table(file="ppls_assets_with_Ys.txt",header=T)
+summary(regdata)
+
+fit3<-lm(YConst ~  PLPct.Currency  +    PLPct.Financial +    PLPct.Index     +  PLPct.Physical-1,data=regdata)
+summary(fit3)
+
+source("~/myRFuncs/loadUtils.R")
+
+a=c(0.42421,0.32261,0.23986,0.57032)
+wgts= a/sum(a)/0.25
+1.0898137 0.8287990 0.6162107 1.4651766
+
+wgts2=0.7*wgts+0.3*c(1,1,1,1)
+
+ b= wgts2/mean(wgts2)
+ b
+
+[1]
+
+pplCombo= b[1]*regdata$PLPct.Currency + b[2]*regdata$PLPct.Financial +  b[3]* regdata$PLPct.Index     + b[4]* regdata$PLPct.Physical
+
+
+res=c(mean(pplCombo), sd(pplCombo),mean(pplCombo)/sd(pplCombo),mean(pplCombo)/sd(pplCombo)*sqrt(252), mdd(pplCombo))
+names(res)=c("mean","std","shp","shpPa","mdd")
+res
+
+
+
+
+######################################
+######################################
+### asset multipliers: use obj= shp -mdd
+###
+################################
+
+D). try mdd: shpPA - a* mdd
+
+objFunc4 <- function(wgts, data) 
+{
+   #mean= wgts[1]*mean(regdata$PLScl.Currency) + wgts[2]*mean(regdata$PLScl.Financial) +  wgts[3]* mean(regdata$PLScl.Index)+ wgts[4]*mean(regdata$PLScl.Physical)
+  #cor=cor(Filter(is.numeric,regdata[c(2:5)]))
+  #varMatrix=cov(Filter(is.numeric,regdata[c(2:5)]))
+  #wgtsVec=matrix(wgts) # 4x1
+  #var= t(wgtsVec)%*%varMatrix%*%wgtsVec
+  #
+  pplCombo= wgts[1]*regdata$PLPct.Currency + wgts[2]*regdata$PLPct.Financial +  wgts[3]* regdata$PLPct.Index     + wgts[4]* regdata$PLPct.Physical
+
+  var=var(pplCombo)
+  mdd=mdd( pplCombo)
+  obj=mean(pplCombo)/sqrt(var)*sqrt(252)-1*mdd
+  return (-obj)
+}
+
+#specify the equality function. The number 15 (to which the function is equal)
+#is specified as an additional argument
+# x1+x2+x3+x4=1
+equal <- function(x) {
+  x[1] + x[2] + x[3] + x[4] 
+}
+
+wgts0=c(0.25,0.25,0.25,0.25)
+
+#unconstrained method don't work
+#result=nlminb(wgts0, objFunc4, lower = -Inf, upper = Inf)
+#result
+
+# opt with equality constrainst
+library(Rsolnp)
+
+#the optimiser - minimises by default
+result=solnp(wgts0, #starting values (random - obviously need to be positive and sum to 15)
+             objFunc4, #function to optimise
+             eqfun=equal, #equality function 
+             eqB=1,   #the equality constraint
+             LB=c(0,0,0,0), #lower bound for parameters i.e. greater than zero
+             UB=c(100,100,100,100)) #upper bound for parameters (I just chose 100 randomly)
+result
+
+
+
+coefs=result$par
+coefs/mean(coefs)
+
+newCoef=coefs/mean(coefs)
+newCoef
+
+## check shp
+
+pplCombo= coefs[1]*regdata$PLPct.Currency + coefs[2]*regdata$PLPct.Financial +  coefs[3]* regdata$PLPct.Index     + coefs[4]* regdata$PLPct.Physical
+res=c(mean(pplCombo), sd(pplCombo),mean(pplCombo)/sd(pplCombo),mean(pplCombo)/sd(pplCombo)*sqrt(252), mdd(pplCombo))
+names(res)=c("mean","std","shp","shpPa","mdd")
+
+round(res,digits=4)
+
+
+-- combo of EW and newCoef(from shp-mdd)
+
+a_EW=1
+comboWgt=a_EW*wgts0+(1-a_EW)*newCoef
+comboWgt=comboWgt/mean(comboWgt)
+pplCombo= comboWgt[1]*regdata$PLPct.Currency + comboWgt[2]*regdata$PLPct.Financial +  comboWgt[3]* regdata$PLPct.Index     + comboWgt[4]* regdata$PLPct.Physical
+res=c(mean(pplCombo), sd(pplCombo),mean(pplCombo)/sd(pplCombo),mean(pplCombo)/sd(pplCombo)*sqrt(252), mdd(pplCombo))
+names(res)=c("mean","std","shp","shpPa","mdd")
+round(res,digits=4)
+comboWgt
+
+
+###############################################
+###############################################
+###################################################
+
+
+
+
+
+###########################
+### Given fcst, check perf:
+
+-- check perf. measure for given fcsts:
+
+install.packages("/home/jgeng/myRFuncs/StrategyUtil_0.1.9.tar.gz", repos = NULL, type="source")
+library(StrategyUtil)
+
+#-- try refit=F options:
+regdata$tmpFcst=0.667*regdata$bt1DMV2*ifelse(regdata$ASSET=="Index",1,0)*ifelse(regdata$bt1DMV2>=0, 1,1)
+
+# to use refit=F, need to specify both y and x
+my_fcst <- data.table(fcst = regdata$tmpFcst,
+                      y = regdata$ooF1D)
+
+bt <- backtest(model = my_fcst,
+               data = regdata,
+               fcstMethod = 'OLS',
+               posMethod = 'optXT',
+               sizeX = 0.04,
+               tcost = 0.03,
+               Nfold = 1,
+               refit=F, # don't refit, need to specify both y and x
+               printDetails = T,
+               saveDetails = T)
+
+#############################
+#########################
+
+
+
+
+
+
+-- Rob SrMdd
+
+
+
+
+--- try Rob SrMDD code:
+
+--- try Robert W srMdd func:
+
+
+
+source("/home/jgeng/myRFuncs/loadUtils.R")
+
+0: optXT
+1: optZ
+2: optZA
+
+
+
+ SrMdd(
+ooF1D~svmFcst+nnFcst, regdata, 
+tcost=0.0, sizeX=0.0, posType=0, lambda=0, verbose=TRUE)
+
+-- sizeX = 0.03 
+
+ SrMdd(
+ooF1D~svmFcst+nnFcst, regdata, 
+tcost=0.03, sizeX=0.03, posType=0, lambda=0, verbose=TRUE)
+
+
+
+
+
+
+
+###############################
+##### Bao utils
+###############################
+source("/home/jgeng/myRFuncs/myMaxShp2.R")
+myMaxShp2(regdata,regdata$ooF1D,regdata$BT1.dm,regdata$GAP.1)
+
+
+file.sources = list.files(path = '~/myRFuncs/', pattern="*.R$", full.names=TRUE,ignore.case=TRUE)
+sapply(file.sources,source,.GlobalEnv)
+
+library(dplyr)
+library(lubridate)
+
+source("/home/jgeng/myRFuncs/MS.R")
+source("/home/jgeng/myRFuncs/OLS.R")
+source("/home/jgeng/myRFuncs/printSharpeRatio.R")
+
+
+MS(ooF1D ~ BT1.dm+GAP.1+predKSVM_LT_2_82,data=regdata)
+
+OLS(ooF1D~BT1.dm, data = regdata)
+
+############################################
+#############################################
+
+
+#####################################
+### write to disk
+indNameStr="predKSVM_LT_2_8";
+          x=predKSVM_LT_2_8;
+df=as.data.frame(cbind(as.character(regdataPost$SYM),regdataPost$DATE,regdataPost$ooF1D,x))
+names(df)=c("SYM","DATE","ooF1D",indNameStr)
+write.table(df, file = paste(indNameStr,".txt",sep=""), quote = FALSE, sep = " ",eol = "\n", na = "NA", dec = ".", row.names = FALSE, col.names = TRUE,  fileEncoding = "")
+##################################
+####################################
+
+
+################################################
+#################################################
+## write a list of things started with predKSVM_LT_* to file:
+inds=apropos("predKSVM_LT_")
+for (ind in inds )
+{
+   indNameStr=ind;
+   x= eval(parse(text=ind))
+df=as.data.frame(cbind(as.character(regdataPost$SYM),regdataPost$DATE,regdataPost$ooF1D,x))
+#df=as.data.frame(cbind(as.character(regdata$SYM),regdata$DATE,regdata$ooF1D,x$yhat_knn))
+names(df)=c("SYM","DATE","ooF1D",indNameStr)
+write.table(df, file = paste(indNameStr,".txt",sep=""), quote = FALSE, sep = " ",eol = "\n", na = "NA", dec = ".", row.names = FALSE, col.names = TRUE,  fileEncoding = "")
+}
+###############################################
+###############################################
+
+
+
+#########################################
+########################################
+-- create an AR1 simulated time series:
+
+#With AR1=0.25, the turnover is close to 1.22.
+
+DATE=seq(1:20000)
+tmpX<-rnorm(20000)
+sim<-arima.sim(list(ar=c(0.25)),n=20000,innov=tmpX)
+ts.plot(sim)
+sd(sim)
+
+X=sim/sd(sim)
+ts.plot(X)
+
+noise<-rnorm(20000)
+beta=0.07
+Y=beta*X+sqrt(1-beta^2)*noise
+
+
+df= data.frame(as.matrix(cbind(DATE,Y,X,noise)))
+df$SYM="AAA"
+
+turnover(df,df$X)
+OLS(Y~X,df)
+
+df$fcst=-0.003708+ 0.072783*df$X
+
+
+write.table(df, file = "Y_X_simu_AR_0.25.txt",  quote = FALSE, sep = " ",
+            eol = "\n", na = "NA", dec = ".", row.names = FALSE,
+            col.names = TRUE,  fileEncoding = "")
+
+###################################################
+##################################################
+
+
+
+###################
+## all univariate R2s:
+x <- regdata[c(3,23:46)]
+y <- regdata[c(4,16:22)]
+cor(x,y)
+
+
+
+###################
+## all univariate R2s:
+x <- regdata[c(3,23:46)]
+y <- regdata[c(4,16:22,50:79)]
+cor(x,y)
+
+
+#################################
+## correlation of all numeric columns:
+#
+cor(Filter(is.numeric,regdata))
+#
+#################################
+
+########################
+# get combined R2:
+ws=c(nrow(regdataPreB),nrow(regdataPost))
+ws=ws/sum(ws)
+r2=c(0.0007012, 0.001502)
+corCombo=sum(sqrt(r2)*ws)
+corCombo^2
+###################
+
+
+
+
+######percentiles #########
+quantile(regdata$OO.7t20,probs=(0:100)/100)
+
+
+
+### session
+regdata$isAmerica= ifelse(regdata$SESSION=="America",1,0)
+regdata$isAsia= ifelse(regdata$SESSION=="Asia",1,0)
+regdata$isEurope= ifelse(regdata$SESSION=="Europe",1,0)
+
+
+regdata$isNonAsia= ifelse(regdata$SESSION!="Asia",1,0)
+
+
+
+### asset
+
+regdata$isStock= ifelse(regdata$ASSET=="Index",1,0)
+regdata$isBond= ifelse(regdata$ASSET=="Financial",1,0)
+regdata$isSIR= ifelse(regdata$ASSET=="SIR",1,0)
+regdata$isCurr= ifelse(regdata$ASSET=="Currency",1,0)
+
+regdata$isEnergy= ifelse(regdata$ASSET=="Energy",1,0)
+
+regdata$isPhy= ifelse(regdata$ASSET=="Energy" | 
+                      regdata$ASSET=="Grain" | 
+                      regdata$ASSET=="Meat" | 
+                      regdata$ASSET=="Metal" | 
+                      regdata$ASSET=="Soft",1,0)
+
+#nonAsia+nonPhy
+regdata$isNANP= ifelse(regdata$isPhy!=1 &regdata$isAsia !=1,1,0)
+
+
+regdata$isUSPhy= ifelse(regdata$isPhy==1 &regdata$isAmerica ==1,1,0)
+
+
+###################################
+############## maxShp for 2 xvars
+##############
+##############################
+
+
+source("/home/jgeng/myRFuncs/printSharpeRatio2.R")
+source("/home/jgeng/myRFuncs/OLS.R")
+library(dplyr)
+library(lubridate)
+
+
+myMaxShp2 <- function(df, yvar, x1,x2) 
+# depVar= yvar vector
+# indepVar =x1, x2 vector
+{
+   df$pnlxy1 = yvar*x1;
+   df$pnlxy2 = yvar*x2;
+
+   #port level pnl for xy1,xy2
+   dataTable <- data.table(df)
+   groupData <- dataTable %>%
+   group_by(DATE) %>%
+   summarise(pnlxy1 = sum(pnlxy1),pnlxy2=sum(pnlxy2))
+
+
+   groupData$yConst=1;
+   lmfit1 <- lm(yConst~pnlxy1+pnlxy2-1,data=groupData)
+   print(summary(lmfit1))
+
+
+   #print(sd(groupData$pnlxy1))
+   #print(sd(groupData$pnlxy2))
+   #print(sd(df$pnlxy1))
+   #print(sd(df$pnlxy2))
+
+   # use tstats from the pnl regression as coefs ratio
+   coefPnl=coef(summary(lmfit1))[, "t value"]
+
+   tmpFcst=coefPnl[1]*x1+coefPnl[2]*x2;
+   lmfit2 <- lm(yvar~tmpFcst,data=df)
+   print(summary(lmfit2))
+
+   coefs=c(lmfit2$coef[1],lmfit2$coef[2]*c(coefPnl[1],coefPnl[2]))
+
+
+   print(coefs)
+   # 0.0156693   0.9793697  -0.2624828 
+
+   newFcst=coefs[1]+coefs[2]*x1+coefs[3]*x2;
+   OLS(yvar~newFcst,df)
+}
+
+myMaxShp2(regdata,regdata$ooF1D,regdata$BT1.dm,regdata$predKSVM_LT_2_30Capped)
+
+
+### or just call it directly:
+
+source("/home/jgeng/myRFuncs/myMaxShp2.R")
+myMaxShp2(regdata,regdata$ooF1D,regdata$BT1.dm,regdata$predKSVM_LT_2_30Capped)
+
+
+##################
+#################
+
+
+####################################################
+###################################################
+### OLS by groups:
+## method 1: using lme4
+## a good discussion: https://stackoverflow.com/questions/1169539/linear-regression-and-group-by-in-r/1214432#1214432
+###
+library(lme4)
+library(lattice)
+ d <- data.frame(state=rep(c('NY', 'CA'), c(10, 10)),
+                 year=rep(1:10, 2),
+                 response=c(rnorm(10), rnorm(10)))
+
+xyplot(response ~ year, groups=state, data=d, type='l')
+
+
+ fits <- lmList(response ~ year | state, data=d)
+ fits
+
+# to get R2s
+dt=as.data.table(d)
+dt[,summary(lm(response~year))$r.squared,by=state]
+ 
+##################################################
+
+
+
+##############
+### method 2: with plyr package
+
+d <- data.frame(
+  state = rep(c('NY', 'CA'), 10),
+  year = rep(1:10, 2),
+  response= rnorm(20)
+)
+
+library(plyr)
+# Break up d by state, then fit the specified model to each piece and
+# return a list
+models <- dlply(d, "state", function(df) 
+  lm(response ~ year, data = df))
+
+# Apply coef to each model and return a data frame
+ldply(models, coef)
+
+# Print the summary of each model
+l_ply(models, summary, .print = TRUE)
+
+########################################
+#######################################
+
+
+
+
+##########################################################
+##########################################################
+###########################################################
+
+------- use GA to do maxShp
+
+regdataPost$predKSVMAdjCapped=constrainByPct(predKSVMAdj,0.01)
+regdataPost$predKSVMFD2Capped=constrainByPct(predKSVMFD2,0.01)
+
+library(GA)
+library(data.table)
+
+# see an example here
+#http://stats.seandolinar.com/genetic-algorithm-to-minimize-ols-regression-in-r/
+
+
+#### create a function to evaluate a linear regression
+#### takes intercept and the two best variables to compute the predicted y_hat
+#### then computes and returns the SSE for each chromosome
+#### we will try to minimize the SSE like OLS does
+ 
+# maxShp: 2 xvars
+shp <- function(data, b0, b1, b2)
+{
+
+   #attach(data, warn.conflicts=F)
+   yhat <- b0+b1*data$predKSVMAdjCapped+b2*data$predKSVMFD2Capped;
+
+   # step 2: DATE and pnl
+   data$pnl=data$ooF1D*yhat
+   df= as.data.frame(cbind(data$DATE,data$pnl))
+   names(df)=c("DATE","pnl")
+   # step 3: compute shp with data.table
+   # data table util is very fast
+   dt <- data.table(df)
+   setkey(dt,DATE) # this will sort by DATE invisibly
+   dfPort<-dt[,list(ppl=sum(pnl),count=.N),by=DATE]
+   mean=mean(dfPort$ppl)
+   sd=sd(dfPort$ppl)
+   shp=mean/sd
+   return(-shp)
+  
+}
+
+#### this sets up a real-value GA using 3 parameters all from -100 to 100
+#### the parameters use real numbers (so floating decimals) and passes those to
+#### the linear regression equation/function
+#### the real-value GA requires a min and max
+#### this takes a while to run
+ 
+ga.maxShp <- ga(type='real-valued', 
+             min=c(-100,-100, -100),
+             max=c(100, 100, 100), 
+             popSize=500, 
+             maxiter=100,
+             run=20, # if 20 runs no improvement, stop 
+             names=c('intercept', 'predKSVMAdjCapped', 'predKSVMFD2Capped'),
+             keepBest=TRUE, 
+             fitness = function(b) - shp(regdataPost, b[1],b[2], b[3]))
+ 
+
+
+
+#### summary of the ga with solution
+ga.model <- summary(ga.maxShp)
+ga.model
+ 
+## coefs for each iteration
+maxIter=56
+allCoefs=data.frame(matrix(unlist(ga.maxShp@bestSol), nrow=maxIter, byrow=T),stringsAsFactors=FALSE) 
+
+#plot coefs vs iter
+plot(allCoefs[,1])
+points(allCoefs[,2],col="red")
+points(allCoefs[,3],col="blue")
+
+
+
+fit1<-lm( ooF1D ~I( 0.173675+   59.24124*  predKSVMAdjCapped+      23.91395*predKSVMFD2Capped)
+,data=regdataPost)
+summary(fit1)
+
+
+#########################
+### then check sharpe ratio/shp for verifications
+
+
+library(data.table)
+
+# step 1: model
+#fit2<-lm(ooF1D ~ 
+#predKSVMAdjCapped + predKSVMFD2Capped
+#I(0.000931252+ 0.421295077*predKSVMAdjCapped + 0.208473201*predKSVMFD2Capped)
+#,data=regdataPost)
+#summary(fit2)
+#R2=summary(fit2)$r.squared
+
+# a=0.3425375 #OLS
+# a=0  # no FD2
+#  a=0.4036707  # maxShp
+ a=1000  # maxShp
+
+fcst2 = regdataPost$predKSVMAdjCapped+a*regdataPost$predKSVMFD2Capped
+
+R2=cor(regdataPost$ooF1D,fcst2)^2
+
+
+
+# step 2: DATE and pnl
+regdataPost$pnl=regdataPost$ooF1D*fcst2
+df= as.data.frame(cbind(regdataPost$DATE,regdataPost$pnl))
+names(df)=c("DATE","pnl")
+# step 3: compute shp with data.table
+# data table util is very fast
+dt <- data.table(df)
+setkey(dt,DATE) # this will sort by DATE invisibly
+dfPort<-dt[,list(ppl=sum(pnl),count=.N),by=DATE]
+mean=mean(dfPort$ppl)
+sd=sd(dfPort$ppl)
+shp=mean/sd
+shp
+
+PPL2=dfPort$ppl
+pcShp=mean(regdata$pnl)/sd(regdata$pnl)
+
+# R2 and shp
+#cat("R2=",round(R2,digits=7)," mean=",round(mean,digits=7), " std=",round(sd,digits=7)," shp=",round(shp,digits=5),"\n")
+cat("R2=",round(R2,digits=7)," mean=",round(mean,digits=7), " std=",round(sd,digits=7)," shp=",round(shp,digits=5), " pcShp=",pcShp,"divNum=", round(shp/pcShp,digits=2), "\n")
+
+#########################################
+#########################################
+
+
+################################################
+##############################################
+################################################
+###############################
+########## regressions by quartiles
+##################
+
+# create X quartiles
+regdata$X <- (regdata$OO2t6)
+regdata$XQtr <- cut(regdata$X, c(-Inf, quantile(regdata$X, c(25,50,75,100)/100, na.rm =T) ))     
+#table( regdata$XQtr)
+ 
+
+regdata$X <- (regdata$OO2t6)
+regdata$XQtr <- cut(regdata$X, c(-Inf, quantile(regdata$X, c(10,20,30,40,50,60,70,80,90,100)/100, na.rm =T) ))     
+#table( regdata$XQtr)
+ 
+
+fit2<-lm(F30M~GAP
+:as.factor(XQtr)
+,data=regdata)
+summary(fit2)
+
+
+##########################
+#######################
+
+
+
+
+
+################################################
+#########
+######### various non-linear smoothing methods
+#########
+################################################
+
+
+################################################
+###################################
+# super smoother from Friedman
+###
+fitSS<-supsmu(regdataPre$OO.22t252, regdataPre$ooF1D, span = 0.25, periodic = FALSE, bass = 0)
+plot(fitSS$x,fitSS$y,pch='.',col="red")
+
+# this will create an uniform grid of interpolations
+#a=approx(x=fitSS$x, y =fitSS$y,  method="linear",n=100)
+
+
+# R2 for the fit
+#smoother cannot really predict, so we have to use interpolation function
+fcstSUS <- approx(x=fitSS$x, y =fitSS$y, xout=regdataPre$OO.22t252, method="linear")$y
+plot(fcstSUS,regdataPre$ooF1D,pch='.')
+fit1<-lm( ooF1D ~fcstSUS,data=regdataPre)
+summary(fit1)
+
+
+hist(fcstSUS,nclass=100)
+
+
+## OLS
+fit1<-lm( ooF1D ~OO.22t252,data=regdataPre)
+summary(fit1)
+
+plot(regdataPre$OO.22t252,fit1$fitted,pch='.')
+
+hist(fit1$fitted,nclass=100)
+
+
+
+## use above model to predict post period
+# R2 for the fit -- post period
+fcstSUSPost <-  approx(x=fitSS$x, y =fitSS$y, xout=regdataPost$OO.22t252, method="linear")$y
+plot(regdataPost$OO.22t252, fcstSUSPost,pch='.',col="red")
+
+
+plot(fcstSUSPost,regdataPost$ooF1D,pch='.')
+fit1<-lm( ooF1D ~fcstSUSPost,data=regdataPost)
+summary(fit1)
+
+hist(fcstSUSPost,nclass=100)
+
+## OLS -- post
+fit1<-lm( ooF1D ~OO.22t252,data=regdataPost)
+summary(fit1)
+
+fit1<-lm( ooF1D ~OO.22t252+I(OO.22t252^3),data=regdataPost)
+summary(fit1)
+
+
+#supersmoother
+span  R2.out
+0.05  0.0001892
+0.1   0.0002091
+0.2   0.0002264
+0.25  0.000244  # best
+0.3   0.0002353
+0.4   0.000228
+0.5   0.0002174
+0.8   0.0001694
+
+=> the best R2 is similar to smooth spline
+
+#############################################
+################################################
+
+
+
+
+
+#############################################
+####################### spline smooth, fast
+#smoothingSpline = smooth.spline(regdataPre$OO.22t252, regdataPre$ooF1D,  nknots=100,spar=1.05)
+
+smoothingSpline = smooth.spline(regdataPre$OO.22t252, regdataPre$ooF1D, nknots=400, spar=1.2)
+plot(smoothingSpline, col="red",lwd=3,pch='.')
+
+# save to pdf
+pdf("ssFit_OO22t252.pdf")
+
+
+smoothingSpline = smooth.spline(regdataPre$OO.22t252, regdataPre$ooF1D, nknots=200, spar=1.1)
+plot(smoothingSpline, col="red",lwd=3,pch='.')
+
+
+
+
+smoothingSpline2 = smooth.spline(regdataPost$OO.22t252, regdataPost$ooF1D, nknots=200, spar=1.1)
+lines(smoothingSpline2, col="blue",lwd=3,pch='.')
+
+
+smoothingSpline3 = smooth.spline(regdata$OO.22t252, regdata$ooF1D, nknots=200, spar=1.1)
+lines(smoothingSpline3, col="green",lwd=3,pch='.')
+
+
+legend(0.75, 0.0006, c("pre", "post","full"),  pch= c(1, 1,1),col=c("red","blue","green"))
+
+dev.off()
+
+
+
+# R2 for the fit
+fcstSS <- predict(smoothingSpline, regdataPre$OO.22t252)$y
+plot(fcstSS,regdataPre$ooF1D,pch='.')
+fit1<-lm( ooF1D ~fcstSS,data=regdataPre)
+summary(fit1)
+
+hist(fcstSS,nclass=100)
+
+
+## OLS
+fit1<-lm( ooF1D ~OO.22t252,data=regdataPre)
+summary(fit1)
+
+plot(regdataPre$OO.22t252,fit1$fitted,pch='.')
+
+hist(fit1$fitted,nclass=100)
+
+
+## use above model to predict post period
+
+# R2 for the fit -- post period
+fcstSSPost <- predict(smoothingSpline3, regdataPost$OO.22t252)$y
+
+plot(fcstSSPost,regdataPost$ooF1D,pch='.')
+fit1<-lm( ooF1D ~fcstSSPost,data=regdataPost)
+summary(fit1)
+
+hist(fcstSSPost,nclass=100)
+
+## OLS -- post
+fit1<-lm( ooF1D ~OO.22t252,data=regdataPost)
+summary(fit1)
+
+fit1<-lm( ooF1D ~OO.22t252+I(OO.22t252^3),data=regdataPost)
+summary(fit1)
+
+
+0.0002308
+0.0002361
+0.0002267
+
+# R2.out
+0.0002317 # 200, spar=1
+0.0002378 # 200, spar=1.05
+0.0002404 # 200, spar=1.1 // best
+0.0002383 # 200, spar=1.15
+0.0002308 # 200, spar=1.2
+
+0.0002118 # 100, spar=1.1
+0.0002361 # 150, spar=1.1
+0.0002404 # 200, spar=1.1 // best
+0.0002375 # 250, spar=1.1 
+0.0002319 # 300, spar=1.1
+
+
+################################################
+################################################
+##
+# cubic line fitting
+##
+cubic= lm( ooF1D ~ regdataPre$OO.22t252+I(regdataPre$OO.22t252^2)+I(regdataPre$OO.22t252^3),data=regdataPre)
+summary(cubic)
+
+# plot the cubic fit line
+cc = coef(cubic) 
+newx = seq(min(regdataPre$OO.22t252), max(regdataPre$OO.22t252), by = (max(regdataPre$OO.22t252) - min(regdataPre$OO.22t252))/500) 
+y.cubic = cc[1] + cc[2]*newx +cc[3]*newx^2 +cc[4]*newx^3 
+#lines(newx, y.cubic, col='blue', lty=2) 
+plot(newx, y.cubic, col='blue', lty=2) 
+
+
+# R2 for the fit
+cubicFit= cc[1] + cc[2]*regdataPre$OO.22t252 +cc[3]*(regdataPre$OO.22t252^2) +cc[4]*(regdataPre$OO.22t252)^3 
+plot(cubicFit,regdataPre$ooF1D,pch='.')
+fit1<-lm( ooF1D ~cubicFit,data=regdataPre)
+summary(fit1)
+
+
+hist(cubicFit)
+
+####################################################
+###################################################
+
+
+
+
+################################################
+################################################
+##
+# quadratic line fitting
+##
+quad= lm( ooF1D ~ regdataPre$OO.22t252+I(regdataPre$OO.22t252^2),data=regdataPre)
+summary(quad)
+
+# plot the quad fit line
+cc = coef(quad) 
+newx = seq(min(regdataPre$OO.22t252), max(regdataPre$OO.22t252), by = (max(regdataPre$OO.22t252) - min(regdataPre$OO.22t252))/500) 
+y.quad = cc[1] + cc[2]*newx +cc[3]*newx^2  
+#lines(newx, y.quad, col='blue', lty=2) 
+plot(newx, y.quad, col='blue', lty=2) 
+
+
+# R2 for the fit
+quadFit= cc[1] + cc[2]*regdataPre$OO.22t252 +cc[3]*(regdataPre$OO.22t252^2) 
+plot(quadFit,regdataPre$ooF1D,pch='.')
+fit1<-lm( ooF1D ~quadFit,data=regdataPre)
+summary(fit1)
+
+#######################################
+########################################
+
+
+#################################
+###
+## loess fitting  -- slow
+#########################
+# fit a loess line
+loess_fit <- loess(ooF1D ~OO.22t252, span = 0.5,regdataPre)
+loess_fit
+lines(regdataPre$OO.22t252, predict(loess_fit), col = "blue")
+## very slow,
+#############################
+
+
+
+## Raw lowess fit, not easy to extract fcst
+lowFit <- lowess(x=regdataPre$OO.22t252,y=regdataPre$ooF1D,  f = 0.1)
+#plot(regdataPre$OO.22t252,lowFit$y,pch='.')
+plot(lowFit$x,lowFit$y)
+
+
+##################################
+####
+#### loessFit: wrapper for loess and lowess
+###############
+library(limma)
+
+# no weight, same as lowess(fast); with wgt, same as loess
+lowFit=loessFit(regdataPre$ooF1D,regdataPre$OO.22t252 ,  span=0.5)
+fcstLow=lowFit$fitted
+
+plot(regdataPre$OO.22t252,fcstLow,pch='.', col = "red")
+
+
+
+# R2 for the fit
+plot(fcstLow,regdataPre$ooF1D,pch='.')
+fit1<-lm( ooF1D ~fcstLow,data=regdataPre)
+summary(fit1)
+
+hist(fcstLow,nclass=100)
+
+
+
+
+## use above model to predict post period
+# R2 for the fit -- post period
+fcstLoePost <-  approx(x=regdataPre$OO.22t252, y =lowFit$fitted, xout=regdataPost$OO.22t252, method="linear")$y
+plot(regdataPost$OO.22t252, fcstLoePost,pch='.',col="red")
+
+
+plot(fcstLoePost,regdataPost$ooF1D,pch='.')
+fit1<-lm( ooF1D ~fcstLoePost,data=regdataPost)
+summary(fit1)
+
+hist(fcstLoePost,nclass=100)
+
+
+
+#loessFit
+span  R2.out
+0.05 0.0001849
+0.1  0.0001976
+0.2  0.000203
+0.25 0.0002056
+0.3  0.000207 # best
+0.4  0.0002055
+0.5  0.0002007
+0.8  0.0001819
+
+=> the best R2 is worse than both smooth splines and supersmoothers.
+
+
+#############################
+################################
+
+
+
+
+
+##################################
+#### 2D/3D smoothing
+
+library("asbio")
+# specify yvar, and a 2D xvars
+#X: A numeric explanatory vector or a two column matrix for 3D smooths.
+
+
+# quite slow, but it does work, took 10 -min for 31K obs data y= x1+x2
+loess.surf(knnoo3PostX$yhat_knn,cbind(regdataPostX$knngoFcst,regdataPostX$OO3),span=0.2)
+
+##############################################
+
+
+
+
+################################
+###  top X drawdowns:
+#############################
+
+library(PerformanceAnalytics)
+
+regdata<-read.table(file="ppls.txt.fcstNet.V1",header=T)
+summary(regdata)
+
+
+regdata<-read.table(file="ppls.txt.fcstNet.V2",header=T)
+summary(regdata)
+
+
+# top X drandown needs to use pct values
+regdata$PPLPct=regdata$PPL/1000000;
+
+
+#convert date to R format
+regdata$RDATE= as.Date(as.character(regdata$DATE), format = "%Y%m%d")
+#must assign rowname as RDATE to get PA to work
+rownames(regdata)=regdata$RDATE
+
+
+#chart.CumReturns(regdata[,c("PPLPct"),drop = FALSE], geometric = FALSE, colorset=rich6equal)
+#chart.Drawdown(regdata[,c("PPLPct"),drop = FALSE], geometric = FALSE, colorset=rich6equal)
+
+#find the top 10 biggest drawdowns:
+dds= table.Drawdowns(regdata[,c("PPLPct"),drop = FALSE],top=20)
+dds
+
+##-- get avg. of first 1,3,5,10 drawdowns:
+ns<-c(1,3,5,10)
+avgDepths=rep(0,length(ns))
+
+
+count=0;
+for ( n in ns) 
+{
+   count=count+1;
+   avgDepths[count]= mean(dds$Depth[1:n])
+}
+allR2s=as.data.frame(cbind(ns,avgDepths))
+allR2s
+
+## -- avg. recovery times
+# top 10
+ mean(dds$Recovery[1:10])
+ mean(dds$Recovery[2:10])
+
+# top 20
+ mean(dds$Recovery[1:20])
+ mean(dds$Recovery[2:20])
+
+
+################################################
+###############################################
+
+
+
+###############################
+########## regressions by quartiles
+##################
+
+# create X quartiles
+regdata$X <- (regdata$LC.1- regdata$HC.1)
+regdata$XQtr <- cut(regdata$X, c(-Inf, quantile(regdata$X, c(25,50,75,100)/100, na.rm =T) ))     
+#table( regdata$XQtr)
+ 
+
+fit2<-lm(GAP.1 ~ 
+LC.1:as.factor(XQtr)
+,data=regdata)
+summary(fit2)
+
+###################################
+###################################
+###################################
+
+
+
+
+
+
+
+##################################
+##################################
+--- compute sharpe ratio/shp for regressions
+
+
+library(data.table)
+
+# step 1: model
+fit2<-lm(ooF1D ~ GAP.1+(MC.1+GAP.1):abs(OO.3)+(MC.1+GAP.1):abs(dropDepth+riseDepth)
++OO.2t21
+#+OO.2t21:ifelse(abs(OO.3)< 2 & abs(OO.3)< 2 ,1,0)
+#+OO.2t21:ifelse(abs(OO.3)>= 2 | abs(OO.3)>= 2 ,1,0)
+
+,data=regdata)
+summary(fit2)
+R2=summary(fit2)$r.squared
+
+
+# step 2: DATE and pnl
+regdata$pnl=regdata$ooF1D*fit2$fitted
+df= as.data.frame(cbind(regdata$DATE,regdata$pnl))
+names(df)=c("DATE","pnl")
+# step 3: compute shp with data.table
+# data table util is very fast
+dt <- data.table(df)
+setkey(dt,DATE) # this will sort by DATE invisibly
+dfPort<-dt[,list(ppl=sum(pnl),count=.N),by=DATE]
+mean=mean(dfPort$ppl)
+sd=sd(dfPort$ppl)
+shp=mean/sd
+shp
+
+#PPL2=dfPort$ppl
+
+# R2 and shp
+cat("R2=",round(R2,digits=7)," mean=",round(mean,digits=7), " std=",round(sd,digits=7)," shp=",round(shp,digits=5),"\n")
+
+#########################################
+#########################################
+
+
+
+######################################
+######################################
+### conditional plot, similar to coplot,  with abline in the chart.
+
+library(lattice)
+
+regdata$dropLength2=ifelse(regdata$dropLength>=7,7,regdata$dropLength)
+
+xyplot(ooF1D~MC.1 | factor(dropLength2), data=regdata, pch=".", main="Y ~ X | Z ", xlab="X",  ylab="Y",layout=c(8,1),
+panel = function(x, y) {
+         panel.xyplot(x, y,pch=".")
+         panel.abline(lm(y ~ x))
+       })
+###################################
+###################################
+
+
+
+
+#####################################
+### condtional plots coplot 
+### 
+
+coplot(ooF1D ~ svmFcst |svmFcst, regdata3,
+number=4,  # number of intervals
+overlap=.1, 
+panel=function(x,y,...) 
+{
+  abline(lm(y ~ x), col="red") # plot fit line
+}, 
+#xlim=c(-pi,pi),
+ylim=c(-0.4,0.4),
+#col=rainbow(6), 
+type="o",           # plot symbols and lines
+cex=1.5,              # make symbols larger
+#pch=as.character(c(seq(from=1,to=(6-1)),"T")), # use chars as symbols
+rows=1)                                         
+                                                
+#######################################################
+##################################
+
+
+
+
+
+#####################################
+### condtional plots coplot with spline smooth lines
+### 
+
+coplot(ooF1D ~ knngoFcst |OO3, regdataPostX,
+
+number=6,  # number of intervals
+overlap=.1, 
+#add both smooth line and linear line fit
+panel=function(x,y,...) {
+          panel.smooth(x,y,span=0.75,iter=5,...)
+          abline(lm(y ~ x), col="blue",lty = 1,lwd=4) #lty means solid line, lwd is line width
+}, 
+#xlim=c(-pi,pi),
+ylim=c(-0.4,0.4),
+#col=rainbow(6), 
+type="o",           # plot symbols and lines
+cex=1.5,              # make symbols larger
+#pch=as.character(c(seq(from=1,to=(6-1)),"T")), # use chars as symbols
+rows=1)      
+
+###########################################333333
+
+
+
+######################################
+######################################
+### conditional plot, similar to coplot,  with abline in the chart.
+### but do it for each quartile.
+
+library(lattice)
+
+# create X quartiles
+regdata3$X <- (regdata3$AEMAOO)
+regdata3$XQtr <- cut(regdata3$X, c(-Inf, quantile(regdata3$X, c(25,50,75,100)/100, na.rm =T) ))     
+#table( regdata3$XQtr)
+
+
+xyplot(ooF1D~svmFcst | factor(XQtr), data=regdata3, pch=".", main="Y ~ X | Z ", xlab="X",  ylab="Y",layout=c(4,1),
+panel = function(x, y) {
+         #panel.xyplot(x, y,pch=".")
+         panel.abline(lm(y ~ x))
+       },
+#xlim=c(-pi,pi),
+ylim=c(-0.4,0.4)
+)
+###################################
+###################################
+
+
+
+
+
+
+############################
+##########
+##########  multivariate random 
+#################
+1). -------- try  Golts and Jones shrinkage cov matrix idea, as opposed to shrink correlation matrix directly:
+
+# 10x3 matrix
+n = 100; # nrow
+m = 3;  #ncol
+
+# Generate data
+#mat = matrix(runif(m*n),m,n);
+#mat = matrix(c(seq(1:30)+runif(m*n)*10),nrow=n,ncol=m,byrow=FALSE); # fill by col by default
+
+#Multivariate normal random
+library(MASS)
+#Sigma is population variance, must be posdefi
+Sigma <- matrix(c(1,0.8,0.2,0.8,1,0.1,0.2,0.1,1),3,3)
+Sigma
+ Sigma
+     [,1] [,2] [,3]
+[1,]  1.0  0.8  0.2
+[2,]  0.8  1.0  0.1
+[3,]  0.2  0.1  1.0
+
+# mvrnorm(n = 1, mu, Sigma, tol = 1e-6, empirical = FALSE, EISPACK = FALSE)
+
+set.seed(12345)
+
+mean=rep(0,3) # mean 0s
+N=n
+dataX=mvrnorm(n = N, mean, Sigma)
+var(dataX)
+          [,1]      [,2]      [,3]
+[1,] 1.0077006 0.7998807 0.2177624
+[2,] 0.7998807 1.0044695 0.1237876
+[3,] 0.2177624 0.1237876 0.9245714
+
+
+ cor(dataX)
+#########################
+
+
+
+
+##############################
+##########################
+### check if a matrix is semi pos definite
+################################
+
+# note is.symmetric.matrix can be skewed up due to rounding error
+# isSymmetric(x) deals with rounding error correctly, so I reload the
+# origina function
+
+
+library(matrixcalc)
+# this doesn't work
+is.positive.semi.definite(corRawS)
+[1] FALSE
+
+# use this
+is.positive.semi.definite.junf(corRawS)
+
+
+### check if a matrix is positive semi-definite
+is.positive.semi.definite.junf<- function (x, tol = 1e-08) 
+{
+    if (!is.square.matrix(x)) 
+        stop("argument x is not a square matrix")
+    if (!isSymmetric.matrix(x)) 
+        stop("argument x is not a symmetric matrix")
+    if (!is.numeric(x)) 
+        stop("argument x is not a numeric matrix")
+    eigenvalues <- eigen(x, only.values = TRUE)$values
+    n <- nrow(x)
+    for (i in 1:n) {
+        if (abs(eigenvalues[i]) < tol) {
+            eigenvalues[i] <- 0
+        }
+    }
+    if (any(eigenvalues < 0)) {
+        return(FALSE)
+    }
+    return(TRUE)
+}
+###############################
+###############################
+
+
+##########################################
+## summarize stats by key
+library(plyr)
+
+statsByKey<- ddply(regdataPre,~PAIR,summarise,mean=mean(xCorrP100D.C1D),sd=sd(xCorrP100D.C1D))
+
+#hist(statsByKey$std)
+#hist(statsByKey$sd)
+summary(statsByKey$mean)
+summary(statsByKey$sd)
+###############################################
+
+
+##############################################
+## compute mean and std for given cols:
+colNums=c(3:10)
+m<- apply(regdataPre[colNums], 2,mean)
+s<-apply(regdataPre[colNums], 2,sd)
+cbind(m,s)
+                        m         s
+xCorrP10D.C1D  0.06826926 0.3970308
+xCorrP20D.C1D  0.06949169 0.3221462
+xCorrP40D.C1D  0.06970041 0.2786818
+xCorrP80D.C1D  0.06984546 0.2533155
+xCorrP100D.C1D 0.06970308 0.2477566
+xCorrP150D.C1D 0.06920992 0.2397331
+xCorrP200D.C1D 0.06872047 0.2349038
+xCorrP400D.C1D 0.06719771 0.2257776
+###################################
+
+
+
+
+
+#################################
+##############################
+### PerformanceAnalytics based on monthly rets
+### drawdown and perf. statistics
+############################
+regdata<-read.table(file="monthly_ret.txt",header=T)
+summary(regdata)
+
+#convert date to R format
+regdata$RDATE= as.Date(as.character(regdata$DATE), format = "%Y%m%d")
+#must assign rowname as RDATE to get PA to work
+rownames(regdata)=regdata$RDATE
+
+#plot(regdata$RDATE,regdata$ret)
+
+library(PerformanceAnalytics)
+
+#more than one series
+#charts.PerformanceSummary(regdata[,c(2,2)], geometric = FALSE,colorset=rich6equal)
+
+# creats cumRet, ret and drawdown plots
+# note that drawn down is in pct from peak value
+charts.PerformanceSummary(regdata[,c("ret"),drop = FALSE], geometric = FALSE, colorset=rich6equal)
+
+
+chart.CumReturns(regdata[,c("ret"),drop = FALSE], geometric = FALSE, colorset=rich6equal)
+chart.Drawdown(regdata[,c("ret"),drop = FALSE], geometric = FALSE, colorset=rich6equal)
+
+
+     ‘chart.BarVaR’
+     ‘chart.Drawdown’
+
+# display monthly ret table
+t(table.CalendarReturns(regdata[,c("ret"),drop = FALSE],geometric = FALSE)/100)
+
+# compute mean/std/skew/kurt type of ret stats
+table.Stats( regdata[,c("ret"),drop = FALSE])
+
+#this one is problematic
+table.Drawdowns(regdata[,c("ret"),drop = FALSE])
+
+findDrawdowns(regdata[,c("ret"),drop = FALSE], geometric = FALSE)
+
+
+# http://cran.r-project.org/web/packages/PerformanceAnalytics/vignettes/PA-charts.pdf
+
+
+##############################################
+###################################################
+
+
+
+
+####################################
+####extract a subset from regdata
+#################
+subset(regdataPost,select=c("SYM","DATE","GAP","O.1","H.1","L.1","C.1","O.2","H.2","L.2","C.2", "O.3","H.3","L.3","C.3", "O.4","H.4","L.4","C.4"),SYM=="ES" & DATE==20150219)
+      SYM     DATE       GAP       O.1      H.1       L.1      C.1      O.2      H.2       L.2      C.2       O.3      H.3       L.3       C.3      O.4      H.4       L.4      C.4
+97955  ES 20150219 -0.339477 -0.240463 0.084869 -0.424346 -0.02829 0.139787 0.670979 -0.027957 0.517213 -0.165934 0.013828 -0.553112 -0.373351 0.109021 0.572362 -0.068138 0.517851
+
+## find out row number in dataframe
+which(regdataPost$SYM=="ES" & regdataPost$DATE==20150219)
+[1] 34664
+
+
+###########################
+
+
+####################
+############
+## CART tree
+
+# tree
+library(tree)
+
+#mytree <- tree(F120M ~ LAG.15t240, mindev=0.0, mincut = (length(regdata[[1]])/40), regdata)
+mytree <- tree(F120M ~ LAG.15t240, mincut = (length(regdata[[1]])/40), regdata)
+
+mytree
+
+#tree yhat
+yhatTree<- predict(mytree,regdata)
+plot(yhatTree,regdata$F120M,pch='.')
+fit1<-lm( F120M ~ yhatTree,data=regdata)
+summary(fit1)
+
+
+
+# plot yhat vx x
+plot(regdata$DTR,yhatTree)
+
+
+
+#mincut The minimum number of observations to include in either child node. This is a
+weighted quantity; the observational weights are used to compute the ‘number’.
+The default is 5.
+#minsize The smallest allowed node size: a weighted quantity. The default is 10.
+#mindev The within-node deviance must be at least this times that of the root node for the
+node to be split.
+
+
+########################
+##########################
+
+
+
+
+#######################################
+### scale oonly certain columns
+#######################################
+
+standarize <- function(x)
+#subtract mean and divide by sd
+{
+  m=mean(x)
+  std=sd(x)
+  x<- (x -m)/std
+}
+
+
+data1<- as.data.frame(matrix(1:20,nrow=5,ncol=4))
+names(data1)=c("x1","x2","x3","x4")
+data1[5,4]=30
+
+data1Norm=data1[c("x2","x3","x4")]
+whichcols= match(c("x3","x4"),names(data1Norm))
+
+
+#method 1: scale only columns x3 and x4
+data1Norm[,whichcols]=scale(data1Norm[,whichcols])
+data1Norm
+
+## method 2: another method with own function, can apply other functions as well
+data1Norm[,whichcols]=lapply(data1Norm[whichcols],standarize)
+data1Norm
+###########################
+###########################
+
+
+
+
+
+
+
+#######################################################################
+######### lekprofile:   NeuralNetTools trick to make lekprofile work with neuralnet
+#######################################################################
+#######################################################################
+library(neuralnet)
+library(nnet)
+library(NeuralNetTools)
+ 
+# neuralnet mod
+mod1 <- neuralnet(Y1 ~ X1 + X2 + X3, data = neuraldat, hidden = 5)
+ 
+# nnet mod, get weights from neuralnet
+modwts <- neuralweights(mod1)
+modwts <- unlist(modwts$wts)
+mod2 <- nnet(Y1 ~ X1 + X2 + X3, data = neuraldat, size = 5, Wts = modwts,  maxit = 0, linout = T)
+ 
+# lek
+lekprofile(mod2)
+ 
+# compare model predictions
+mod1_res <- mod1$net.result[[1]]
+mod2_res <- predict(mod2)
+plot(mod1_res, mod2_res)
+unique(mod1_res- mod2_res) # results are identical
+
+#################################
+##################################
+
+
+----- lekprofile for NN model (from net2 object)
+#save(net2, file = "net2.Rdata")
+load("net2.Rdata")
+#save everything
+save.image(file = "all.Rdata")
+
+
+library(neuralnet)
+library(nnet)
+library(NeuralNetTools)
+ 
+# neuralnet mod
+#mod1 <- neuralnet(Y1 ~ X1 + X2 + X3, data = neuraldat, hidden = 5)
+ 
+
+# nnet mod, get weights from neuralnet
+net3=net2
+
+net3$weights[[1]]= net3$weights[[8]] ## I assign rep=8(I want 8) to rep=1,
+modwts =neuralweights(net3) ## neuralweights func will extract first weights
+modwts <- unlist(modwts$wts)
+
+
+regdataPre=net3$data
+# run nnet with neuralnbet weights, but don't iterate
+modnnet <- nnet(ooF1DScl ~ GAP.1 + HC.1 + LC.1 + AbsOO.3 + AEMAOO, data = regdataPre, size = 3, Wts = modwts,  maxit = 0, linout = T)
+
+ 
+# lek
+lekprofile(modnnet)
+
+
+### adjust x and y axis limits
+## The function also returns a ggplot2 object that can be further modified. 
+p1 = lekprofile(modnnet)
+#class(p1)
+# [1] "gg"     "ggplot"
+library(ggplot2)
+### adjust x and y axis limits
+p1+scale_x_continuous(limits = c(-4, 4))+scale_y_continuous(limits = c(0.42,0.58))
+
+
+
+
+## another theme
+p1 + theme_bw() +
+   scale_colour_brewer(palette="PuBu") +
+   scale_linetype_manual(values=rep('dashed',6)) +
+   scale_size_manual(values=rep(1,6))
+
+
+#output values
+head( lekprofile(modnnet,val_out=T))
+
+
+
+
+# save to pdf
+pdf("lek_net2.pdf")
+lekprofile(modnnet)
+dev.off()
+
+pdf("lek_net2_ggplot.pdf")
+p1+scale_x_continuous(limits = c(-4, 4))+scale_y_continuous(limits = c(0.42,0.58))
+dev.off()
+
+
+# compare model predictions
+net2_res <- net2$net.result[[8]]
+modnnet_res <- predict(modnnet)
+#plot(mod1_res, modnnet_res)
+unique(net2_res- modnnet_res) # results are identical
+
+
+############################################################
+#############################################################
+
+
+
+
+
+
+
+###################################
+#####3.4). various neural networks R packages
+##############################
+neuralnet, nnet, RSNNS, deepnet, h2o on the simple regression and interaction example.
+/home/jgeng/projects/PortaraFVOO/TEST1_OO_HILOs/TEST3_FV_revisited_scaleByFullSampleStd/TEST1_outSampleTest/TEST1_nnetExamples
+###############################
+##########################
+
+
+
+
+#########################
+##########  use caret CV
+##########
+###############
+
+2). use caret's CV to pick best number of neurons
+
+library(caret)
+
+
+#10-fold CV, repeat only once
+ctrl <- trainControl(method = "cv", 
+                      repeats = 1,
+       	              number=10,
+                      #seeds = seeds
+		      )
+
+#note caret use layer1/2/3, so don't double specify hidden
+paragrid <- expand.grid(.layer1 = c(1,2,3,4,5,6,8,10,15,20), .layer2 = 0, .layer3 = 0)
+
+
+caret.nn <- train(ooF1DScl ~OO.1+OO.3, 
+                   data = regdataPre, 
+                   method = "neuralnet", 
+                   algorithm = 'rprop+', 
+                   #learningrate = 0.25, 
+		   threshold=0.01,
+                   rep=1,		 
+                   #hidden = 3, 
+                   trControl = ctrl,
+                   linear.output=TRUE,
+                   tuneGrid = paragrid
+                    )
+
+
+caret.nn
+
+trellis.par.set(caretTheme())
+plot(caret.nn)
+
+plot(caret.nn,metric = "RsquaredSD")
+
+
+## for plot: RMSE and RMSESD
+plot(caret.nn$results$layer1,caret.nn$results$RMSE,type="b",pch=1,lty=1,ylim=c(0.0,0.2))
+lines(caret.nn$results$layer1,caret.nn$results$RMSESD*10,type="b",pch=4,lty=4,col="red")
+#legend(0.75, 0.0006, c("0.875", "0.95","0.99"), pch= c(1, 4,5),col=c("black","red","blue"))
+#title("R2(ooF1D~ooP1D) for ema speeds")
+
+
+## for plot: R2 and CVR2
+plot(caret.nn$results$layer1,caret.nn$results$Rsquared,type="b",pch=1,lty=1,ylim=c(0.0,0.02))
+lines(caret.nn$results$layer1,caret.nn$results$RsquaredSD,type="b",pch=4,lty=4,col="red")
+#legend(0.75, 0.0006, c("0.875", "0.95","0.99"), pch= c(1, 4,5),col=c("black","red","blue"))
+#title("R2(ooF1D~ooP1D) for ema speeds")
+# to see line type: ?plot.default.
+
+
+##########################
+## compute out-sample R2 for each parameter
+
+
+trainSet<- model.matrix(~ OO.1+OO.3-1, regdataPre)
+testSet<- model.matrix(~ OO.1+OO.3-1, regdataPost)
+
+scale=max(regdata$ooF1D)-min(regdata$ooF1D)
+min=min(regdata$ooF1D)
+
+
+hiddenList<- c(1,2,3,4,5,6,8,10,12,15,17,20)
+
+ns=rep(0,length(hiddenList))
+R2Ins=rep(0,length(hiddenList))
+R2Outs=rep(0,length(hiddenList))
+
+count=0;
+#for ( n in hiddenList) 
+for ( n in c(15)) 
+{
+   count=count+1;
+   net2 <- neuralnet(ooF1DScl~OO.1+OO.3,regdataPre, hidden=n, threshold=0.01,rep=3,linear.output=TRUE)
+
+   # use the best model among 3 reps
+   best=which.min(as.vector(net2$result.matrix["error",]))
+
+   ### in-sample
+   netIn <- compute(net2, trainSet,rep=best)
+   predNNETIn<- netIn$net.result
+   # scale back
+   predNNETIn<-predNNETIn*scale+min
+   R2In=sign(cor(predNNETIn,regdataPre$ooF1D))*cor(predNNETIn,regdataPre$ooF1D)^2
+
+   ### out-sample
+   netOut <- compute(net2, testSet,rep=best)
+   predNNET<- netOut$net.result
+   #scale back
+   predNNET<-predNNET*scale+min
+   R2Out=sign(cor(predNNET,regdataPost$ooF1D))*cor(predNNET,regdataPost$ooF1D)^2
+   print(paste(n," ",R2In," ",R2Out))
+
+   ns[count]=n;
+   R2Ins[count]=R2In
+   R2Outs[count]=R2Out
+}
+
+
+allR2s=as.data.frame(cbind(ns,R2Ins,R2Outs))
+allR2s
+
+
+## for plot: in-R2 and out-R2
+plot(allR2s$ns,allR2s$R2Ins,type="b",pch=1,lty=1,ylim=c(0.0,0.02))
+lines(allR2s$ns,allR2s$R2Outs,type="b",pch=4,lty=4,col="red")
+#legend(0.75, 0.0006, c("0.875", "0.95","0.99"), pch= c(1, 4,5),col=c("black","red","blue"))
+#title("R2(ooF1D~ooP1D) for ema speeds")
+# to see line type: ?plot.default.
+
+
+#############################################
+###############################################
+############################################
+
+
+#############################
+######## neuralnet example
+########
+#############################
+
+
+library(neuralnet)
+
+
+scale=max(regdata$ooF1D)-min(regdata$ooF1D)
+min=min(regdata$ooF1D)
+
+
+set.seed(31)
+
+regdata$ooF1DScl=scaleZero2One(regdata$ooF1D)
+
+regdata$AbsOO.3<- abs(regdata$OO.3)
+
+regdataPre<- regdata[regdata$DATE <= 20070101,]
+regdataPost<- regdata[regdata$DATE > 20070101,]
+
+
+plot(regdataPre$OO.1,regdataPre$ooF1D)
+plot(regdataPost$OO.1,regdataPost$ooF1D)
+
+## neuralnet
+
+# test 1:   1 layer, X neurons
+#set.seed(17)
+
+
+#norm.fun = function(x){(x - min(x))/(max(x) - min(x))}
+#cols=c("OO.1","AbsOO.3","ooF1DScl")
+#regdataPreNorm =  apply(regdataPre[cols], 2,norm.fun)
+#regdataPostNorm =  apply(regdataPost[cols], 2,norm.fun)
+
+
+
+net1 <- neuralnet(ooF1DScl~OO.1+AbsOO.3,regdataPre, hidden=c(4), threshold=0.01,rep=100,linear.output=TRUE,stepmax = 1e+05,lifesign = "full")
+#,lifesign.step=1)
+
+
+## if rep >1, check all R2s from each fut
+rep=90
+allFits<- as.data.frame(matrix(unlist(net1$net.result),ncol=rep))
+cor(allFits,regdataPre$ooF1D)^2
+
+
+
+
+
+
+# activation function
+net1$act.fct
+net1$weight
+plot(net1)
+
+trainSet<- model.matrix(~ OO.1+AbsOO.3-1, regdataPre)
+testSet<- model.matrix(~ OO.1+AbsOO.3-1, regdataPost)
+
+scale=max(regdata$ooF1D)-min(regdata$ooF1D)
+min=min(regdata$ooF1D)
+
+
+
+
+### in-sample
+netIn <- compute(net1, trainSet,rep=1)
+predNNETIn<- netIn$net.result
+# scale back
+predNNETIn<-predNNETIn*scale+min
+
+plot(predNNETIn,regdataPre$ooF1D)
+fit2<-lm(ooF1D ~ predNNETIn,data=regdataPre)
+summary(fit2)
+
+
+
+
+### out-sample
+netOut <- compute(net1, testSet,rep=1)
+predNNET<- netOut$net.result
+
+#scale back
+predNNET<-predNNET*scale+min
+
+plot(predNNET,regdataPost$ooF1D)
+fit2<-lm(ooF1D ~ predNNET,data=regdataPost)
+summary(fit2)
+
+
+
+-- take avg. of 10 reps:
+#############
+
+# in-sample
+
+meanFitIn<- apply(allFits,1,mean)
+# scale back
+meanFitIn<-meanFitIn*scale+min
+
+plot(meanFitIn,regdataPre$ooF1D)
+fit2<-lm(ooF1D ~ meanFitIn,data=regdataPre)
+summary(fit2)
+
+
+### out-sample
+
+rep=90
+allFitsOut= matrix(rep(0,rep*nrow(regdataPost)), ncol=rep)
+for ( n in c(1:rep)) 
+{
+  netOut <- compute(net1, testSet,rep=n)
+  predNNET<- netOut$net.result
+  allFitsOut[,n]=predNNET
+}
+
+allFitsOut=as.data.frame(allFitsOut)
+
+meanFit<- apply(allFitsOut,1,mean)
+# scale back
+meanFit<-meanFit*scale+min
+
+plot(meanFit,regdataPost$ooF1D)
+fit2<-lm(ooF1D ~ meanFit,data=regdataPost)
+summary(fit2)
+
+###############################
+################################
+###############################
+################################
+
+
+
+####################################
+# first, save net2 into a file:
+## to save best function into a file:
+sink(file = "net2_weights.R")
+#, append = TRUE)
+net2$weights[[8]]
+#cat("# This was a great function with a score of", theScore, "\n")
+sink()
+
+############## print to pdf
+# net graph:
+pdf("net2.pdf")
+plot(net2,rep=8)
+dev.off()
+
+######## save R object
+save(net2, file = "net2.Rdata")
+#load("net2.Rdata")
+
+
+###################################
+################ how to use apply
+computeNN <- function(data,c1)
+#c1=GAP.1,HC.1,LC.1,AbsOO.3,AEMAOO)
+{
+   w11=c(0.2733936644, 0.2289574373, -0.1240974044, 0.1264358583, 0.8055110722, 0.6239024663)
+   w12=c(0.44480447495, 0.20733749131, 0.24174221706, 0.20027865467, -0.10453279469, -0.09541666641)
+   w13=c(-0.47994597881, -0.10133890386, 0.19321395667, -0.03886881265, -0.70791825966, -0.56342126833)
+   w21=c(-0.6066483545, 1.2896109699, -0.3814766223, 1.6208484874)
+   x=c(1,data[c1])
+   o1=sigmoid(w11%*%x)
+   o2=sigmoid(w12%*%x)
+   o3=sigmoid(w13%*%x)
+   x2=c(1,o1,o2,o3)
+   yhat=w21%*%x2
+   scale=6.2029486
+   min=-3.1372293
+   yhat*scale+min
+}
+
+##- function with extra args:
+#     cave <- function(x, c1, c2) c(mean(x[c1]), mean(x[c2]))
+#     apply(x, 1, cave,  c1 = "x1", c2 = c("x1","x2"))
+     
+NNTrain<- as.matrix(apply(trainSet,1,computeNN,c1=c("GAP.1","HC.1","LC.1","AbsOO.3","AEMAOO")),ncol=1)
+NNTest<- as.matrix(apply(testSet,1,computeNN,c1=c("GAP.1","HC.1","LC.1","AbsOO.3","AEMAOO")),ncol=1)
+#full set
+NN<- as.matrix(apply(fullSet,1,computeNN,c1=c("GAP.1","HC.1","LC.1","AbsOO.3","AEMAOO")),ncol=1)
+colnames(NN)=c("NN")
+
+###########################################################
+
+
+
+
+#####################################
+#######################
+## write it out to a file:
+
+attach(regdata)
+
+AEMAOO=round(AEMAOO,digit=8)
+NN=round(NN,digit=8)
+
+
+df= cbind(data.frame(SYM),DATE,ooF1D,GAP.1,HC.1,LC.1,AbsOO.3,AEMAOO,NN) 
+
+#change numeric column to 7 digits
+is.num <- sapply(df, is.numeric)
+df[is.num] <- lapply(df[is.num], round, 8)
+
+
+write.table(df, file = "/home/jgeng/projects/FCASTDATA/NN.txt",  quote = FALSE, sep = " ",
+            eol = "\n", na = "NA", dec = ".", row.names = FALSE,
+            col.names = TRUE,  fileEncoding = "")
+
+/home/jgeng/projects/FCASTDATA
+###################################
+
+
+
+
+
+
+
+fit1<-lm(difF1D ~ lag.1+ lag.2+ lag.3+ lag.4+ lag.5+ lag.6+ lag.7+ lag.8+ lag.9+ lag.10+ lag.11+ lag.12+ lag.13+ lag.14+ lag.15+ lag.16+ lag.17+ lag.18+ lag.19+ lag.20+ lag.21+ lag.22+ lag.23+ lag.24+ lag.25+ lag.26+ lag.27+ lag.28+ lag.29+ lag.30+ lag.31+ lag.32+ lag.33+ lag.34+ lag.35+ lag.36+ lag.37+ lag.38+ lag.39+ lag.40+ lag.41+ lag.42+ lag.43+ lag.44+ lag.45+ lag.46+ lag.47+ lag.48+ lag.49+ lag.50+ lag.51+ lag.52+ lag.53+ lag.54+ lag.55+ lag.56+ lag.57+ lag.58+ lag.59+ lag.60,data=regdata)
+summary(fit1)
+
+
+fit1<-lm(abs(difF1D) ~ abs(lag.1)+ abs(lag.2)+ abs(lag.3)+ abs(lag.4)+ abs(lag.5)+ abs(lag.6)+ abs(lag.7)+ abs(lag.8)+ abs(lag.9)+ abs(lag.10)+ abs(lag.11)+ abs(lag.12)+ abs(lag.13)+ abs(lag.14)+ abs(lag.15)+ abs(lag.16)+ abs(lag.17)+ abs(lag.18)+ abs(lag.19)+ abs(lag.20)+ abs(lag.21)+ abs(lag.22)+ abs(lag.23)+ abs(lag.24)+ abs(lag.25)+ abs(lag.26)+ abs(lag.27)+ abs(lag.28)+ abs(lag.29)+ abs(lag.30)+ abs(lag.31)+ abs(lag.32)+ abs(lag.33)+ abs(lag.34)+ abs(lag.35)+ abs(lag.36)+ abs(lag.37)+ abs(lag.38)+ abs(lag.39)+ abs(lag.40)+ abs(lag.41)+ abs(lag.42)+ abs(lag.43)+ abs(lag.44)+ abs(lag.45)+ abs(lag.46)+ abs(lag.47)+ abs(lag.48)+ abs(lag.49)+ abs(lag.50)+ abs(lag.51)+ abs(lag.52)+ abs(lag.53)+ abs(lag.54)+ abs(lag.55)+ abs(lag.56)+ abs(lag.57)+ abs(lag.58)+ abs(lag.59)+ abs(lag.60),data=regdata)
+summary(fit1)
+
+
+
+## ema:
+
+attach(regdata)
+
+# make_count.pl 1 60|gawk '{print "+a^"($1-1)"*abs(lag."$i")"}'|myTranspose.pl
+
+
+
+a=0.86
+emaLag<- a^0*abs(lag.1) +a^1*abs(lag.2) +a^2*abs(lag.3) +a^3*abs(lag.4) +a^4*abs(lag.5) +a^5*abs(lag.6) +a^6*abs(lag.7
+
+
+
+
+
+
+a=0.915
+#make_count.pl 1 60|gawk '{print "+a^"($1-1)}'|myTranspose.pl
+
+denom<- a^0 +a^1 +a^2 +a^3 +a^4 +a^5 +a^6 +a^7 +a^8 +a^9 +a^10 +a^11 +a^12 +a^13 +a^14 +a^15 +a^16 +a^17 +a^18 +a^19 +a^20 +a^21 +a^22 +a^23 +a^24 +a^25 +a^26 +a^27 +a^28 +a^29 +a^30 +a^31 +a^32 +a^33 +a^34 +a^35 +a^36 +a^37 +a^38 +a^39 +a^40 +a^41 +a^42 +a^43 +a^44 +a^45 +a^46 +a^47 +a^48 +a^49 +a^50 +a^51 +a^52 +a^53 +a^54 +a^55 +a^56 +a^57 +a^58 +a^59
+
+emaLagNorm<- emaLag/denom
+
+plot(emaLagNorm,abs(regdata$difF1D))
+fit1<-lm(abs(difF1D) ~ emaLagNorm,data=regdata)
+summary(fit1)
+
+######################
+###
+## set column width
+## options(width=200)
+## or put in .Rprofile
+############################
+
+
+## by year/YYYY
+
+
+## by year for this period
+
+
+## by year for this period
+regdata$MMDD=regdata$DATE%%10000
+regdata$YYYY=(regdata$DATE-regdata$MMDD) /10000
+regdata$DD=regdata$DATE%%10000%%100
+regdata$YYMM=(regdata$DATE-regdata$DD) /100
+regdata$MM=(regdata$MMDD-regdata$DD)/100
+
+
+#qtrs, YYYY01, YYYY04
+regdata$QQ=(regdata$MM-1)%/%3+1
+regdata$YYQQ=regdata$YYYY*100+regdata$QQ
+
+
+regdata$MOQ1=ifelse(regdata$MM==1|regdata$MM==4|regdata$MM==7|regdata$MM==10,1,0 )
+regdata$MOQ2=ifelse(regdata$MM==2|regdata$MM==5|regdata$MM==8|regdata$MM==11,1,0 )
+regdata$MOQ3=ifelse(regdata$MM==3|regdata$MM==6|regdata$MM==9|regdata$MM==12,1,0 )
+
+
+Eqtr method2
+regdata$YYQQ=regdata$YYMM
+regdata$YYQQ=ifelse(regdata$MM==1|regdata$MM==2|regdata$MM==3,regdata$YYYY*100+3,regdata$YYQQ )
+regdata$YYQQ=ifelse(regdata$MM==4|regdata$MM==5|regdata$MM==6,regdata$YYYY*100+6,regdata$YYQQ )
+regdata$YYQQ=ifelse(regdata$MM==7|regdata$MM==8|regdata$MM==9,regdata$YYYY*100+9,regdata$YYQQ )
+regdata$YYQQ=ifelse(regdata$MM==10|regdata$MM==11|regdata$MM==12,regdata$YYYY*100+12,regdata$YYQQ )
+
+
+
+
+## get DOW with lubridate package:
+regdata$DOW=wday(ymd(regdata$DATE))-1
+sort(unique(regdata$DOW))
+
+
+
+# freq. counting: obs in each year
+as.data.frame(table(regdata$YYYY))
+
+
+
+fit1<-lm(abs(difF1D) ~ emaLag:as.factor(YYYY),data=regdata)
+summary(fit1)
+
+
+
+a=0.915
+
+
+denom<- a^0 +a^1 +a^2 +a^3 +a^4 +a^5 +a^6 +a^7 +a^8 +a^9 +a^10 +a^11 +a^12 +a^13 +a^14 +a^15 +a^16 +a^17 +a^18 +a^19 +a^20 +a^21 +a^22 +a^23 +a^24 +a^25 +a^26 +a^27 +a^28 +a^29 +a^30 +a^31 +a^32 +a^33 +a^34 +a^35 +a^36 +a^37 +a^38 +a^39 +a^40 +a^41 +a^42 +a^43 +a^44 +a^45 +a^46 +a^47 +a^48 +a^49 +a^50 +a^51 +a^52 +a^53 +a^54 +a^55 +a^56 +a^57 +a^58 +a^59
+emaLagNorm<- emaLag/denom
+
+
+fit1<-lm(abs(difF1D) ~emaLagNorm+ I(emaLagNorm^4) ,data=regdata)
+summary(fit1)
+
+
+fit1<-lm(abs(difF1D) ~emaLagNorm+ I(lag.1^2)+I(lag.2^2) ,data=regdata)
+summary(fit1)
+
+fit1<-lm(abs(difF1D) ~emaLagNorm+ I(abs(lag.1)^4) ,data=regdata)
+summary(fit1)
+
+
+fit1<-lm(abs(difF1D) ~emaLagNorm+ I(abs(lag.1)^4)+I(abs(lag.2)^4)+I(abs(lag.3)^4) ,data=regdata)
+summary(fit1)
+
+
+a=0.5
+emaLagO4<- a^0*abs(lag.1)^4 +a^1*abs(lag.2)^4 +a^2*abs(lag.3)^4 +a^3*abs(lag.4)^4 +a^4*abs(lag.5)^4 +a^5*abs(lag.6)^4 +a^6*abs(lag.7)^4
+
+fit1<-lm(abs(difF1D) ~emaLagNorm+ emaLagO4 ,data=regdata)
+summary(fit1)
+
+
+########################### ACF, auto-cor
+
+acf(regdata$ooP1D.0.95,lag.max=63,plot=FALSE)
+
+###################################
+
+########################
+### add some local fit: LOESS
+
+regdata$absDifF1D=abs(regdata$difF1D)
+
+
+# fit a loess line
+loess_fit <- loess(absDifF1D ~emaLagNorm, regdata)
+loess_fit
+
+lines(regdata$emaLagNorm, predict(loess_fit), col = "blue")
+
+## very slow,
+#############################
+
+
+# fit a non-linear regression
+nls_fit <- nls(absDifF1D ~ a + b * x^(-c), Data, start = list(a = 80, b = 20, 
+    c = 0.2))
+lines(Data$x, predict(nls_fit), col = "red")
+
+
+library(lattice)
+xyplot(regdata$absDifF1D~emaLagNorm, type=c("smooth", "p"))
+
+
+##################
+library(ggplot2)
+ggplot(regdata, aes(emaLagNorm,absDifF1D),formula = ,absDifF1D ~emaLagNorm+emaLagNorm^2 ) + geom_point() + geom_smooth()
+
+# quite fast
+#  ?stat_smooth : use this to see how to use
+#####
+
+########################
+# super smoother from Friedman
+fitSS<-supsmu(emaLagNorm, regdata$absDifF1D, span = 0.5, periodic = FALSE, bass = 0)
+
+
+#############################################
+####################### spline smooth, fast
+
+smoothingSpline = smooth.spline(emaLagNorm, regdata$absDifF1D, spar=0.5)
+plot(emaLagNorm,regdata$absDifF1D,pch=".")
+
+lines(smoothingSpline, col="red",lwd=3)
+
+# vert fast, see below for parameter on line type/width etc
+#http://www.statmethods.net/advgraphs/parameters.html
+
+# smooth.spline parameter selection
+http://stackoverflow.com/questions/14929268/how-do-i-select-the-smoothing-parameter-for-smooth-spline
+
+################################################
+
+### hexbin plot, didn't try
+set.seed(101)
+a<-rnorm(1E7,1,1)
+b<-rnorm(1E7,1,1)
+library(hexbin)
+system.time(plot(hexbin(a,b)))
+
+## tabel plot package: visual inspection for large dataset, interesting, check it out later
+
+Tableplot
+
+
+
+################################################# speed up plotting points
+# scatter plot, setting pch="." makes it faster;also if starting with X11(type="Xlib"), even faster
+X11(type="Xlib")
+plot(emaLagNorm,regdata$absDifF1D,pch=".")
+
+## put something like this is your .Rprofile to customize the defaults
+     setHook(packageEvent("grDevices", "onLoad"),
+             function(...) grDevices::X11.options(width = 8, height = 6, xpos = 0,
+                                                  pointsize = 10))
+
+
+#plot(emaLagNorm,regdata$absDifF1D)
+##########################################
+
+# another scatter plot
+ggplot(regdata,aes(x=emaLagNorm,y=absDifF1D),environment=environment() ) + geom_point(alpha = 0.4)
+
+
+
+##################
+#### 3D plot: RGL
+library(rgl)
+open3d()
+ open3d(windowRect = c(00,00, 1000, 5760) )
+plot3d(emaLagNorm, regdata$lag.1, regdata$absDifF1D, cex=1.5, size=4, type="s", col=rainbow(1000) )
+
+## => too slow for big data, and crashed the R session.
+
+
+
+
+###############################################################
+### compute mean of yvar for each of the X deciles/quantiles; conditional mean
+###############################
+library(zoo)
+
+regdata$XTmp <- regdata$bt1FcstDM
+regdata$YTmp<- regdata$coF1D
+N=20
+step=100/N
+regdata$XTmpQtr <- cut(regdata$XTmp, c(-0.000001+min(regdata$XTmp), quantile(regdata$XTmp, seq(step,100,step)/100, na.rm =T) ),dig.lab=5 )
+aggMean=aggregate(regdata$YTmp, by=list(xvar = regdata$XTmpQtr), FUN=mean)
+aggCount=aggregate(regdata$YTmp, by=list(xvar = regdata$XTmpQtr), FUN=length)
+aggXMean=aggregate(regdata$XTmp, by=list(xvar = regdata$XTmpQtr), FUN=mean)
+agg <- cbind(aggXMean$x,aggMean,aggCount$x)
+names(agg)=c("xMean","ivls","yMean","count")
+agg
+plot(agg$xMean,agg$yMean,col="red",lwd=3,type="b")
+
+
+####
+#### for verification:
+s=subset(regdata,bt1FcstDM<=-0.054886)
+#table( regdata$XQtr)
+#nrow(s)
+summary(s$coF1D)
+
+
+meanJunf <- function(x)
+#subtract mean and divide by sd
+{
+  m=mean(x)
+}
+
+
+
+################################################
+################################################
+
+
+###############################################################
+### compute mean of yvar for each of the X deciles/quantiles; conditional mean
+###############################
+#agg with stds
+
+library(zoo)
+
+regdata$XTmp <- regdata$FVOO2
+#regdata$YTmp<- I(regdata$pnl/regdata$FVOO2)
+regdata$YTmp<- regdata$pnl
+
+N=20
+step=100/N
+regdata$XTmpQtr <- cut(regdata$XTmp, c(-0.000001+min(regdata$XTmp), quantile(regdata$XTmp, seq(step,100,step)/100, na.rm =T) ),dig.lab=5 )
+aggMean=aggregate(regdata$YTmp, by=list(xvar = regdata$XTmpQtr), FUN=mean)
+aggStd=aggregate(regdata$YTmp, by=list(xvar = regdata$XTmpQtr), FUN=sd)
+aggCount=aggregate(regdata$YTmp, by=list(xvar = regdata$XTmpQtr), FUN=length)
+aggXMean=aggregate(regdata$XTmp, by=list(xvar = regdata$XTmpQtr), FUN=mean)
+agg <- cbind(aggXMean$x,aggMean,aggStd$x,aggCount$x)
+names(agg)=c("xMean","ivls","yMean","yStd","count")
+agg
+
+plot(agg$xMean,agg$yMean,col="red",lwd=3,type="b")
+
+plot(agg$xMean,agg$yStd,col="red",lwd=3,type="b")
+
+
+
+meanJunf <- function(x)
+#subtract mean and divide by sd
+{
+  m=mean(x)
+}
+
+
+stdJunf <- function(x)
+{
+  m=sd(x)
+}
+
+
+
+
+
+
+
+###################
+## all univariate R2s:
+x <- regdata[4:68]
+y <- regdata[3]
+cor(x,y)^2
+
+
+
+
+
+##############################
+-- test 3D plot for y=x1*x2 or sphere 
+
+x1<-seq(-1,1,0.05)
+x2<-seq(-1,1,0.05)
+
+f <- function(x1, x2) 
+{ 
+    #d=cbind(x1,x2)
+    #z=sqrt(1-x1^2-x2^2)
+    #x1*x2
+    -x1*abs(x2)
+}
+
+#this Z must be a matrix
+z <- outer(x1, x2, f)
+
+#op <- par(bg = "white")
+     persp(x1, x2, z, theta = 30, phi = 30, expand = 0.5, col = "lightblue")
+
+# rainbow color plot
+library(shape)
+persp(x1, x2, z, theta = -30, phi = 30, expand = 0.8, col = drapecol(z),
+           ltheta = 60,  ticktype = "detailed",
+           xlab = "OO.1", ylab = "OO.3", zlab = "ooF1D", scale = FALSE, main = "3D plot")
+
+
+# plot to file
+pdf("V3_5_8.pdf")
+par(mfrow=c(2, 2))
+.. here, run persp 
+dev.off()
+
+
+#######################################
+
+
+
+#########################: this is best for x1:abs(x2) illustration
+#######  another 3D with persp, but using fields to add a color bar
+
+library(fields)
+
+## persp example code
+par(bg = "white")
+x <- seq(-2, 2, length = 30)
+y <- seq(-2, 2, length = 35)
+
+# func=x*y
+z <- outer(x, y, function(a, b) -a*abs(b))
+
+nrz <- nrow(z)
+ncz <- ncol(z)
+# Create a function interpolating colors in the range of specified colors
+jet.colors <- colorRampPalette( c("blue", "green","yellow", "red") )
+# Generate the desired number of colors from this palette
+nbcol <- 100
+color <- jet.colors(nbcol)
+# Compute the z-value at the facet centres
+zfacet <- (z[-1, -1] + z[-1, -ncz] + z[-nrz, -1] + z[-nrz, -ncz])/4
+# Recode facet z-values into color indices
+facetcol <- cut(zfacet, nbcol)
+
+#pdf("OO1_3_inter.pdf")
+
+persp(x, y, z, col = color[facetcol], phi = 30, theta = -30, axes=T, ticktype='detailed',   xlab = "OO.1", ylab = "OO.3", zlab = "ooF1D",cex.lab=1.2,cex.axis=1.0)
+#cex.lab: lable 20% larger than default
+
+## add color bar
+image.plot(legend.only=T, zlim=range(zfacet), col=color)
+
+#dev.off()
+
+#########################
+
+
+
+
+
+
+###################################
+#################################
+### 3D wireframe example, with colarmap
+
+library(lattice)
+
+surf <-
+expand.grid(x = seq(-pi, pi, length = 50),
+            y = seq(-pi, pi, length = 50))
+
+surf$z <-
+with(surf, 
+{
+    #d <- 3 * sqrt(x^2 + y^2)
+    #exp(-0.02 * d^2) * sin(d)
+    #cicle: sqrt(1-x^2 - y^2)
+    x*y
+})
+
+g <- surf
+
+pts <-   data.frame(x =rbind(2,2,2), y=rbind(-2,-2,-2), z=rbind(.5,0,-.5))
+
+wireframe(z ~ x * y, g, aspect = c(1, .5),
+      drape=TRUE,
+      scales = list(arrows = FALSE),
+      pts = pts,
+      panel.3d.wireframe =
+      function(x, y, z,
+               xlim, ylim, zlim,
+               xlim.scaled, ylim.scaled, zlim.scaled,
+               pts,
+               ...) {
+          panel.3dwire(x = x, y = y, z = z,
+                       xlim = xlim,
+                       ylim = ylim,
+                       zlim = zlim,
+                       xlim.scaled = xlim.scaled,
+                       ylim.scaled = ylim.scaled,
+                       zlim.scaled = zlim.scaled,
+                       ...)
+          xx <-
+              xlim.scaled[1] + diff(xlim.scaled) *
+                  (pts$x - xlim[1]) / diff(xlim)
+          yy <-
+              ylim.scaled[1] + diff(ylim.scaled) *
+                  (pts$y - ylim[1]) / diff(ylim)
+          zz <-
+              zlim.scaled[1] + diff(zlim.scaled) *
+                  (pts$z - zlim[1]) / diff(zlim)
+          panel.3dscatter(x = xx,
+                          y = yy,
+                          z = zz,
+                          xlim = xlim,
+                          ylim = ylim,
+                          zlim = zlim,
+                          xlim.scaled = xlim.scaled,
+                          ylim.scaled = ylim.scaled,
+                          zlim.scaled = zlim.scaled,
+                          ...)
+      })
+
+
+
+########################
+##################################
+
+
+##################################
+### 3D plot with rgl with transpancy
+
+library(rgl)
+library(emdbook)
+
+sfun <- function(x,y) 
+{
+  d <- 3 * sqrt(x^2 + y^2)
+  exp(-0.02 * d^2) * sin(d)
+  #d^3
+  #x*y
+  sqrt(3^2-x^2-y^2)
+}
+
+cc <- curve3d(sfun(x,y),xlim=c(-pi,pi),ylim=c(-pi,pi),n=c(50,50),sys3d="rgl")
+
+colvec <- colorRampPalette(c("violet","blue","green","yellow","orange","red"))(100)
+with(cc,persp3d(x,y,z,col=colvec[cut(z,100)],alpha=0.5))
+pts <-   data.frame(x=c(2,2,2), y=c(-2,-2,-2), z=c(.5,0,-.5))
+with(pts,spheres3d(x,y,z,col="blue",radius=0.1))
+rgl.snapshot("rgltmp1.png")
+
+
+#######################################
+######################################
+
+
+
+################################
+## apply usage
+
+A <- function(x) x + 1
+wifi <- data.frame(replicate(9,1:4))
+wifi
+
+data.frame(wifi[1:3], apply(wifi[4:9],2, A) )
+#or
+cbind(wifi[1:3], apply(wifi[4:9],2, A) )
+
+## sapply and lapply
+If you want a list returned, use lapply. If you want a vector, use sapply.
+
+
+
+
+#########################################
+## 3D plot --perspective plot: this looks pretty good.
+
+CH.sh allRets_all_diffAlphas.txt |fgrep P1D|myTranspose.pl| sed s/\ /,/g| sed s/ooP1D.//g
+
+x1<-c(0.7,0.75,0.78,0.79,0.8,0.85,0.86,0.87,0.875,0.89,0.9,0.91,0.915,0.925,0.93,0.94,0.95,0.96,0.97,0.98,0.99,0.995,0.999,0.9999)
+
+y1<-c(0.7,0.75,0.78,0.79,0.8,0.85,0.86,0.87,0.875,0.89,0.9,0.91,0.915,0.925,0.93,0.94,0.95,0.96,0.97,0.98,0.99,0.995,0.999,0.9999)
+
+z<- cor(regdata[x],regdata[y])^2
+#(Z is a matrix)
+
+
+op <- par(bg = "white")
+     #persp(x, y, z, theta = 30, phi = 30, expand = 0.5, col = "lightblue")
+
+
+# rainbow color plot
+library(shape)
+persp(x1, y1, z, theta = 30, phi = 30, expand = 0.5, col = drapecol(z),
+           ltheta = 120,  ticktype = "detailed",
+           xlab = "ooP1D", ylab = "ooF1D", zlab = "R2" )
+
+
+
+
+### to print to pdf file
+
+pdf("R2_emaSpeed.pdf") 
+
+persp(x1, y1, z, theta = 30, phi = 30, expand = 0.5, col = drapecol(z),
+           ltheta = 120,  ticktype = "detailed",
+           xlab = "ooP1D", ylab = "ooF1D", zlab = "R2", main="R2(ooF1D~ooP1D) for ema speeds" )
+
+dev.off() 
+
+
+
+
+(
+# just regular single color plot
+     persp(x1, y1, z, theta = 30, phi = 30, expand = 0.5, col = "grey",
+           ltheta = 120, shade = 0.75, ticktype = "detailed",
+           xlab = "ooP1D", ylab = "ooF1D", zlab = "R2" )
+
+)
+##################################################
+
+
+
+
+###############################################
+### plot multiple lines on same plot, with legends and title:
+
+
+
+## simplifed R2:
+
+y=0.875, 0.95, 0.99
+x=all
+
+y<- c(19,35,43)
+x<- c(4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50)
+
+
+x1<-c(0.7,0.75,0.78,0.79,0.8,0.85,0.86,0.87,0.875,0.89,0.9,0.91,0.915,0.925,0.93,0.94,0.95,0.96,0.97,0.98,0.99,0.995,0.999,0.9999)
+
+ x1
+ [1] 0.7000 0.7500 0.7800 0.7900 0.8000 0.8500 0.8600 0.8700 0.8750 0.8900
+[11] 0.9000 0.9100 0.9150 0.9250 0.9300 0.9400 0.9500 0.9600 0.9700 0.9800
+[21] 0.9900 0.9950 0.9990 0.9999
+
+R2<-cor(regdata[x],regdata[y])^2
+
+
+
+pdf("R2_emaSpeed_simple.pdf") 
+
+plot(x1,R2[,1],ylim=c(0.0001,0.0007))
+points(x1,R2[,2],col="red",pch=4)
+points(x1,R2[,3],col="blue",pch=5)
+legend(0.75, 0.0006, c("0.875", "0.95","0.99"), pch= c(1, 4,5),col=c("black","red","blue"))
+title("R2(ooF1D~ooP1D) for ema speeds")
+
+dev.off()
+
+
+
+## for plot: in-R2 and out-R2
+plot(allR2s$ns,allR2s$R2Ins,type="b",pch=1,lty=1,ylim=c(0.0,0.25))
+lines(allR2s$ns,allR2s$R2Outs,type="b",pch=4,lty=4,col="red")
+#legend(0.75, 0.0006, c("0.875", "0.95","0.99"), pch= c(1, 4,5),col=c("black","red","blue"))
+#title("R2(ooF1D~ooP1D) for ema speeds")
+# to see line type: ?plot.default.
+
+
+##############################################
+
+
+
+
+
+
+
+###################################################
+# Stepwise Regression
+library(MASS)
+
+fit1<-lm(AOOF1 ~1
+,data=regdata)
+summary(fit1)
+
+step <- stepAIC(fit1, scope=~.+AOO.ema.0.7+ AOO.ema.0.75+ AOO.ema.0.78+ AOO.ema.0.79+ AOO.ema.0.8+ AOO.ema.0.85+ AOO.ema.0.86+ AOO.ema.0.87+ AOO.ema.0.875+ AOO.ema.0.89+ AOO.ema.0.9+ AOO.ema.0.91+ AOO.ema.0.915+ AOO.ema.0.925+ AOO.ema.0.93+ AOO.ema.0.94+ AOO.ema.0.95+ AOO.ema.0.96+ AOO.ema.0.97+ AOO.ema.0.975+ AOO.ema.0.98+ AOO.ema.0.99+ AOO.ema.0.995+ AOO.ema.0.999+ AOO.ema.0.9999, direction="forward", data=regdata)
+
+step$anova # display results 
+
+##########################################
+
+##########################
+# All Subsets Regression
+#####################
+library(leaps)
+
+
+leaps<-regsubsets(AOOF1~AOO.ema.0.7+ AOO.ema.0.75+ AOO.ema.0.78+ AOO.ema.0.79+ AOO.ema.0.8+ AOO.ema.0.85+ AOO.ema.0.86+ AOO.ema.0.87+ AOO.ema.0.875+ AOO.ema.0.89+ AOO.ema.0.9+ AOO.ema.0.91+ AOO.ema.0.915+ AOO.ema.0.925+ AOO.ema.0.93+ AOO.ema.0.94+ AOO.ema.0.95+ AOO.ema.0.96+ AOO.ema.0.97+ AOO.ema.0.975+ AOO.ema.0.98+ AOO.ema.0.99+ AOO.ema.0.995+ AOO.ema.0.999+ AOO.ema.0.9999
+,data=regdata,nbest=5)
+
+# view results
+summary(leaps)
+
+# list first 40 models coefs:
+coef(leaps,1:40)
+
+# plot Rsq
+plot(summary(leaps)$rsq)
+
+ [1] 0.2299512 0.2299224 0.2296747 0.2291102 0.2288321 0.2309530 0.2309066
+ [8] 0.2308913 0.2308895 0.2308404 0.2310096 0.2310011 0.2309987 0.2309946
+[15] 0.2309922 0.2310642 0.2310640 0.2310638 0.2310637 0.2310618 0.2310881
+[22] 0.2310873 0.2310871 0.2310867 0.2310860 0.2311314 0.2311312 0.2311308
+[29] 0.2311307 0.2311307 0.2311491 0.2311491 0.2311489 0.2311485 0.2311485
+[36] 0.2311740 0.2311740 0.2311739 0.2311739 0.2311738
+
+
+# plot a table of models showing variables in each model.
+# models are ordered by the selection statistic.
+plot(leaps,scale="r2")
+
+# plot statistic by subset size
+library(car)
+subsets(leaps, statistic="rsq") 
+
+# output matrix
+#summary(leaps)$outmat
+
+
+#######################################
+
+
+##########  sort by value and return indices
+
+
+### print top 20 best fitted functions
+TOP=20
+indices=sort.int(sapply(result1$population, result1$fitnessFunction),index.return = TRUE)
+#indices has $ix and $i=x fields
+#for (i in 1:length(indices$ix) )
+for (i in 1:TOP )
+{
+  idx=indices$ix[i]
+  print(paste("i=", i,"bestLoc=",idx,"fitness=",indices$x[i]) )
+  print(result1$population[[idx]])
+  cat("\n")
+}
+
+######################################
+### insample and outsample type of tests
+###
+###
+--## check in and out R2 as a function of iteration
+
+## coefs for each iteration
+maxIter=2000
+allCoefs=data.frame(matrix(unlist(ga.OLS@bestSol), nrow=maxIter, byrow=T),stringsAsFactors=FALSE) 
+
+# only sample some points
+step=100
+#max=2000%/%11
+#1, 100, 200, etc
+idx=seq(1,nrow(allCoefs),step)
+
+idxs=rep(0,length(idx))
+R2Ins=rep(0,length(idx))
+R2Outs=rep(0,length(idx))
+
+count=0;
+for ( i in idx)
+{
+   count=count+1
+   #print(i)
+
+   
+   ### in-sample
+   coefs=ga.OLS@bestSol[[i]]
+   yhat = coefs[1]+abs(coefs[2]*regdataPre$OO.1
+                    +coefs[3]*regdataPre$OO.2
+                    +coefs[4]*regdataPre$OO.3
+                    +coefs[5]*regdataPre$OO.4
+                    +coefs[6]*regdataPre$OO.5
+                    +coefs[7]*regdataPre$OO.6
+                    +coefs[8]*regdataPre$OO.7
+                    +coefs[9]*regdataPre$OO.8
+                    +coefs[10]*regdataPre$OO.9
+                    +coefs[11]*regdataPre$OO.10) *regdataPre$OO.1*coefs[12]
+   #plot(yhat,regdataPre$ooF1D,pch=".")
+   fit1=lm(ooF1D ~ yhat,data=regdataPre)
+   #summary(fit1)
+   R2In=summary(fit1)$r.squared
+
+
+   ### out-sample
+   yhat = coefs[1]+abs(coefs[2]*regdataPost$OO.1
+                    +coefs[3]*regdataPost$OO.2
+                    +coefs[4]*regdataPost$OO.3
+                    +coefs[5]*regdataPost$OO.4
+                    +coefs[6]*regdataPost$OO.5
+                    +coefs[7]*regdataPost$OO.6
+                    +coefs[8]*regdataPost$OO.7
+                    +coefs[9]*regdataPost$OO.8
+                    +coefs[10]*regdataPost$OO.9
+                    +coefs[11]*regdataPost$OO.10) *regdataPost$OO.1*coefs[12]
+   #plot(yhat,regdataPost$ooF1D,pch=".")
+   fit1=lm(ooF1D ~ yhat,data=regdataPost)
+   #summary(fit1)
+   R2Out=summary(fit1)$r.squared
+
+   idxs[count]=i
+   R2Ins[count]=R2In
+   R2Outs[count]=R2Out
+   print(paste("i, R2in/out=",i,R2In, R2Out)) 
+}
+
+
+## for plot: in-R2 and out-R2
+plot(idxs,R2Ins,type="b",pch=1,lty=1,ylim=c(0.0,0.02))
+lines(idxs,R2Outs,type="b",pch=4,lty=4,col="red")
+#legend(0.75, 0.0006, c("0.875", "0.95","0.99"), pch= c(1, 4,5),col=c("black","red","blue"))
+#title("R2(ooF1D~ooP1D) for ema speeds")
+# to see line type: ?plot.default.
+
+######################################
+######################################
+
+
+
+
+
+
+
